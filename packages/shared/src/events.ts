@@ -1,9 +1,13 @@
+import type { AgentStatus } from './status.js';
 import type {
   ActivityEvent,
   Agent,
   ApprovalRequest,
+  ApprovalStatus,
   EngineInfo,
+  Id,
   Project,
+  RunMode,
   Task,
   Timestamp,
   WorldSnapshot,
@@ -62,6 +66,57 @@ export interface EngineEvent {
   engine: EngineInfo;
 }
 
+/**
+ * What happened, as opposed to what is now true.
+ *
+ * The row-carrying events above are the state of record: they are what every
+ * screen renders. These say which transition produced that state, which is what
+ * you need to react rather than re-render — to fetch a result the moment its
+ * task finishes, to raise a toast when a run fails, to draw attention to an
+ * approval the moment it is asked for.
+ *
+ * They are derived from the rows that changed, in one place on the server, so a
+ * domain event and the row it describes can never disagree — and it does not
+ * matter whether the change came from the simulation or from a real agent.
+ */
+export type DomainEvent =
+  /** An agent moved between states. `from` is null the first time it is seen. */
+  | { kind: 'agent.status'; agentId: Id; from: AgentStatus | null; to: AgentStatus; taskId: Id | null }
+  | { kind: 'task.created'; taskId: Id; projectId: Id; title: string }
+  /** Work actually began. `runMode` says whether a model is doing it. */
+  | { kind: 'task.started'; taskId: Id; agentId: Id | null; runMode: RunMode }
+  | { kind: 'task.progress'; taskId: Id; progress: number; runMode: RunMode }
+  | { kind: 'task.completed'; taskId: Id; agentId: Id | null; runMode: RunMode }
+  | { kind: 'task.failed'; taskId: Id; agentId: Id | null; reason: string | null }
+  | { kind: 'approval.requested'; approvalId: Id; taskId: Id; agentId: Id; summary: string }
+  | { kind: 'approval.resolved'; approvalId: Id; taskId: Id; decision: ApprovalStatus };
+
+export type DomainEventKind = DomainEvent['kind'];
+
+/** Every kind, as data — so a UI can subscribe to one without a string literal. */
+export const DOMAIN_EVENT_KINDS = [
+  'agent.status',
+  'task.created',
+  'task.started',
+  'task.progress',
+  'task.completed',
+  'task.failed',
+  'approval.requested',
+  'approval.resolved',
+] as const satisfies readonly DomainEventKind[];
+
+type EveryKindIsListed =
+  Exclude<DomainEventKind, (typeof DOMAIN_EVENT_KINDS)[number]> extends never ? true : never;
+const _kindsExhaustive: EveryKindIsListed = true;
+void _kindsExhaustive;
+
+/** Domain events from one change, in the order they happened. */
+export interface DomainEventsMessage {
+  type: 'events';
+  at: Timestamp;
+  events: DomainEvent[];
+}
+
 /** Keeps proxies from closing an idle stream. Carries the server clock. */
 export interface HeartbeatEvent {
   type: 'heartbeat';
@@ -74,6 +129,7 @@ export type ServerEvent =
   | ProjectsChangedEvent
   | ApprovalsChangedEvent
   | ActivityEventMessage
+  | DomainEventsMessage
   | EngineEvent
   | HeartbeatEvent;
 
@@ -94,6 +150,7 @@ export const SERVER_EVENT_TYPES = [
   'projects',
   'approvals',
   'activity',
+  'events',
   'engine',
   'heartbeat',
 ] as const satisfies readonly ServerEventType[];

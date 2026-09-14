@@ -112,7 +112,7 @@ export function AgentDetail() {
           <div className="card">
             <div className="between" style={{ marginBottom: 9 }}>
               <h4 style={{ margin: 0 }}>Right now</h4>
-              <SimulatedNotice compact />
+              <SimulatedNotice compact live={display.task?.runMode === 'live'} />
             </div>
             <div className="kv">
               <span>Status</span>

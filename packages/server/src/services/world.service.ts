@@ -10,6 +10,7 @@ import {
   type EngineInfo,
   type Id,
   type Project,
+  type RuntimeInfo,
   type Task,
   type TaskView,
   type WorldSnapshot,
@@ -30,6 +31,18 @@ export class WorldService {
     private readonly repos: Repositories,
     private readonly engine: AgentEngine,
     private readonly activityLimit = 120,
+    /**
+     * What can be executed for real. Injected rather than imported so the read
+     * side stays free of configuration, and so a test can say "no live agents"
+     * without touching the environment.
+     */
+    private readonly runtime: () => RuntimeInfo = () => ({
+      available: false,
+      credentialsConfigured: false,
+      model: '',
+      archetypes: [],
+      maxSearches: 0,
+    }),
   ) {}
 
   /** Everything needed to render the app, in one payload. */
@@ -47,6 +60,7 @@ export class WorldService {
       stats: this.statsFrom(agents, tasks, projects),
       serverTime: Date.now(),
       engine: this.engineInfo(),
+      runtime: this.runtime(),
     };
   }
 

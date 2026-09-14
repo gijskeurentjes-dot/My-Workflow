@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import type { AppContext } from '../context.js';
-import { hasAgentCredentials, config } from '../config.js';
+import { hasAgentCredentials } from '../config.js';
 import { runtimeInfo } from '../services/agents/claude/runners.js';
 import { command } from './helpers.js';
 import { refuse } from '../errors.js';
@@ -15,13 +15,9 @@ import { refuse } from '../errors.js';
 export function createExecutionRouter(ctx: AppContext): Router {
   const router = Router();
 
+  // Whether a live run is possible, and on what. Never the key itself.
   router.get('/runtime', (_req, res) => {
-    res.json({
-      ...runtimeInfo(),
-      // Whether a key is present, never the key itself.
-      credentialsConfigured: hasAgentCredentials(),
-      maxSearches: config.agentMaxSearches,
-    });
+    res.json(runtimeInfo());
   });
 
   router.post('/tasks/:id/run', (req, res) => {

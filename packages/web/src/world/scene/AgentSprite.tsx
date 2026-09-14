@@ -150,6 +150,12 @@ export function AgentSprite({ display, clock, tw, th, sc, mini, selected, onSele
     agent.status === 'working' || agent.status === 'paused' || agent.status === 'failed';
   const chipW = Math.max(56, agent.name.length * 5.9 + 30);
 
+  // What this agent is carrying, shown on the island itself rather than only in
+  // a panel: an island you cannot read is just decoration.
+  const live = task?.runMode === 'live';
+  const taskLabel = task && task.status !== 'completed' ? truncate(task.title, 26) : null;
+  const taskW = taskLabel ? Math.max(chipW, taskLabel.length * 5.2 + (live ? 26 : 16)) : 0;
+
   const label = `${agent.name}, ${display.agent.role || profile.title}, on ${display.project.name}. ${STATUS_LABEL[agent.status]}. ${doing}`;
 
   return (
@@ -313,9 +319,45 @@ export function AgentSprite({ display, clock, tw, th, sc, mini, selected, onSele
         </g>
       )}
 
+      {/* The task plate sits above the nameplate, so a glance reads
+          "who" then "what". A live run is marked, because the difference
+          between a model working and a simulation pretending matters. */}
+      {taskLabel && !mini && (
+        <g transform={`translate(0,${-72 * sc}) scale(${sc})`} style={{ pointerEvents: 'none' }}>
+          <rect
+            x={-taskW / 2}
+            y="0"
+            width={taskW}
+            height="15"
+            rx="7.5"
+            fill="var(--panel)"
+            stroke={live ? 'var(--violet)' : 'var(--line)'}
+            strokeWidth={live ? 1.5 : 1}
+            opacity="0.97"
+          />
+          {live && (
+            <circle cx={-taskW / 2 + 9} cy="7.5" r="3" fill="var(--violet)">
+              <animate attributeName="opacity" values="1;.25;1" dur="1.6s" repeatCount="indefinite" />
+            </circle>
+          )}
+          <text
+            x={live ? -taskW / 2 + 16 : -taskW / 2 + 8}
+            y="7.8"
+            dominantBaseline="central"
+            fontSize="8.4"
+            fontWeight="600"
+            fill="var(--ink-2)"
+            fontFamily="var(--body)"
+          >
+            {taskLabel}
+          </text>
+        </g>
+      )}
+
       {bubble && (
         <g
-          transform={`translate(${(chipW / 2 + 9) * sc},${-58 * sc}) scale(${sc})`}
+          // Clear of the widest plate, so the badge never sits on the title.
+          transform={`translate(${(Math.max(chipW, taskW) / 2 + 9) * sc},${-58 * sc}) scale(${sc})`}
           style={{ pointerEvents: 'none' }}
         >
           <circle r="10" fill="var(--panel)" stroke={bubble.tint} strokeWidth="1.7" />
@@ -329,3 +371,7 @@ export function AgentSprite({ display, clock, tw, th, sc, mini, selected, onSele
   );
 }
 
+/** Titles are written for a panel, not a plate. */
+function truncate(text: string, max: number): string {
+  return text.length <= max ? text : `${text.slice(0, max - 1).trimEnd()}…`;
+}

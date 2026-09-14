@@ -10,6 +10,7 @@ import type {
   PlotKey,
   Project,
   ProjectStatus,
+  RunMode,
   Task,
   TaskPriority,
   TaskResult,
@@ -94,6 +95,8 @@ export interface TaskPatch {
   priority?: TaskPriority;
   assignedAgentId?: Id | null;
   progress?: number;
+  /** Set when a real agent takes the work over from the simulation. */
+  runMode?: RunMode;
   needsApproval?: boolean;
   blocker?: string | null;
   startedAt?: number | null;

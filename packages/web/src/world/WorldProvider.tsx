@@ -13,6 +13,8 @@ import {
   SERVER_EVENT_TYPES,
   STREAM_PATH,
   type Agent,
+  type DomainEvent,
+  type DomainEventKind,
   type ServerEvent,
   type Task,
   type WorldSnapshot,
@@ -114,6 +116,12 @@ function reduce(state: State, action: Action): State {
         case 'approvals':
           return { ...state, world: { ...world, approvals: event.approvals } };
 
+        case 'events':
+          // Named events say what happened; the rows in `tick` say what is now
+          // true. Nothing is reduced into the world from here — subscribers are
+          // notified instead, in the effect below.
+          return state;
+
         case 'projects':
           return { ...state, world: { ...world, projects: event.projects } };
 
@@ -134,11 +142,15 @@ function reduce(state: State, action: Action): State {
   }
 }
 
+type DomainEventHandler = (event: DomainEvent) => void;
+
 interface WorldContextValue extends State {
   /** Server time, corrected for clock skew. Drives walk interpolation. */
   serverNow(): number;
   resetDemoData(): Promise<void>;
   resetting: boolean;
+  /** Subscribe to named events. Returns the unsubscribe function. */
+  subscribe(handler: DomainEventHandler): () => void;
 }
 
 const WorldContext = createContext<WorldContextValue | null>(null);
@@ -156,6 +168,17 @@ export function WorldProvider({ children }: { children: ReactNode }) {
   const skewRef = useRef(0);
   skewRef.current = state.clockSkew;
 
+  // Subscribers live in a ref rather than state: a domain event should reach
+  // the handful of components that care without re-rendering the whole world.
+  const handlers = useRef(new Set<DomainEventHandler>());
+
+  const subscribe = useCallback((handler: DomainEventHandler) => {
+    handlers.current.add(handler);
+    return () => {
+      handlers.current.delete(handler);
+    };
+  }, []);
+
   useEffect(() => {
     // EventSource reconnects on its own, so there is no retry loop here — only
     // a status flag so the UI can say the stream dropped.
@@ -165,7 +188,13 @@ export function WorldProvider({ children }: { children: ReactNode }) {
 
     const onFrame = (message: MessageEvent<string>) => {
       try {
-        dispatch({ type: 'event', event: JSON.parse(message.data) as ServerEvent });
+        const event = JSON.parse(message.data) as ServerEvent;
+        dispatch({ type: 'event', event });
+        if (event.type === 'events') {
+          for (const domainEvent of event.events) {
+            for (const handler of handlers.current) handler(domainEvent);
+          }
+        }
       } catch {
         // A malformed frame is not worth tearing the stream down for.
       }
@@ -225,8 +254,8 @@ export function WorldProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const value = useMemo<WorldContextValue>(
-    () => ({ ...state, serverNow, resetDemoData, resetting }),
-    [state, serverNow, resetDemoData, resetting],
+    () => ({ ...state, serverNow, resetDemoData, resetting, subscribe }),
+    [state, serverNow, resetDemoData, resetting, subscribe],
   );
 
   return <WorldContext.Provider value={value}>{children}</WorldContext.Provider>;
@@ -246,4 +275,30 @@ export function useWorld(): WorldSnapshot {
   const { world } = useWorldContext();
   if (!world) throw new Error('useWorld was called before the world finished loading');
   return world;
+}
+
+/**
+ * React to named events without re-rendering on every one of them.
+ *
+ * Pass the kinds you care about; the handler is called for those only. The
+ * handler is kept in a ref, so a component can use fresh props inside it
+ * without re-subscribing on every render.
+ */
+export function useDomainEvents(
+  kinds: readonly DomainEventKind[],
+  handler: (event: DomainEvent) => void,
+): void {
+  const { subscribe } = useWorldContext();
+  const latest = useRef(handler);
+  latest.current = handler;
+
+  // Joined so a caller can pass a fresh array literal without resubscribing.
+  const key = kinds.join(',');
+
+  useEffect(() => {
+    const wanted = new Set(key.split(',') as DomainEventKind[]);
+    return subscribe((event) => {
+      if (wanted.has(event.kind)) latest.current(event);
+    });
+  }, [subscribe, key]);
 }

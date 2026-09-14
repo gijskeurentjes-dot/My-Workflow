@@ -322,6 +322,8 @@ export function seedWorld(repos: Repositories, now: number = Date.now()): SeedRe
         priority: t.priority ?? 'normal',
         buildingKey: TASK_TYPES[t.type].building,
         progress,
+        // The demo world is the simulation; only a real run says otherwise.
+        runMode: 'simulated',
         durationSeconds: t.durationSeconds ?? 120,
         needsApproval: t.needsApproval ?? true,
         blocker: t.blocker ?? null,

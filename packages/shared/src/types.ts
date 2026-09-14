@@ -201,7 +201,15 @@ export interface Task {
   buildingKey: PlotKey;
   /** 0–100. Advanced by the agent engine, never by the client. */
   progress: number;
-  /** Simulated seconds of work from 0 to 100%. */
+  /**
+   * Whether this work is being done by a real agent or the simulation.
+   *
+   * Recorded on the row rather than inferred, so the interface can say which
+   * it is showing you — and keep saying it after a reload, once the run that
+   * produced the progress is long over.
+   */
+  runMode: RunMode;
+  /** Simulated seconds of work from 0 to 100%. Ignored by a live run. */
   durationSeconds: number;
   /** Whether finishing the work raises an approval request. */
   needsApproval: boolean;
@@ -227,6 +235,7 @@ export interface TaskView extends Task {
 export type ActivityEventType =
   | 'created'
   | 'assigned'
+  | 'queued'
   | 'started'
   | 'progress'
   | 'paused'
@@ -358,6 +367,11 @@ export interface WorldSnapshot {
   serverTime: Timestamp;
   /** Which agent engine produced this snapshot. */
   engine: EngineInfo;
+  /**
+   * What can be run for real. Carried on the snapshot so every screen can tell
+   * a live agent from a simulated one without a second request.
+   */
+  runtime: RuntimeInfo;
 }
 
 export interface WorldStats {
@@ -368,6 +382,28 @@ export interface WorldStats {
   tasksOpen: number;
   tasksCompleted: number;
   approvalsPending: number;
+}
+
+/**
+ * How a task's progress is being produced.
+ *
+ * `simulated` is the mock state machine — no model is called. `live` means a
+ * real agent ran, and every number on the row came from that run.
+ */
+export const RUN_MODES = ['simulated', 'live'] as const;
+export type RunMode = (typeof RUN_MODES)[number];
+
+/** What the server can actually execute for real, reported to the interface. */
+export interface RuntimeInfo {
+  /** True when a real agent could be run right now. */
+  available: boolean;
+  /** Whether an API key is configured at all. Never the key itself. */
+  credentialsConfigured: boolean;
+  /** The default model a live run uses. */
+  model: string;
+  /** Archetypes with a live engine behind them. */
+  archetypes: string[];
+  maxSearches: number;
 }
 
 export interface EngineInfo {

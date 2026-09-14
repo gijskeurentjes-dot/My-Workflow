@@ -10,7 +10,8 @@ import { Settings } from './screens/Settings.js';
 import { TaskBoard } from './screens/TaskBoard.js';
 import { Workspace } from './screens/Workspace.js';
 import { Toasts } from './components/Toasts.js';
-import { useWorldContext } from './world/WorldProvider.js';
+import { useCommands } from './world/CommandProvider.js';
+import { useDomainEvents, useWorldContext } from './world/WorldProvider.js';
 
 const NAV = [
   { to: '/', icon: '🏝️', label: 'Workspace', end: true },
@@ -56,6 +57,39 @@ function ConnectionChip() {
 }
 
 /**
+ * Tells you when a real agent finished, failed, or needs you.
+ *
+ * Only live runs are announced. The simulation raises approvals constantly and
+ * a toast for each would be noise; a model that spent real time and money on
+ * your behalf is worth interrupting for, wherever you happen to be looking.
+ */
+function LiveRunWatcher() {
+  const { world } = useWorldContext();
+  const { notify } = useCommands();
+
+  useDomainEvents(['task.failed', 'task.completed', 'approval.requested'], (event) => {
+    const taskId = 'taskId' in event ? event.taskId : null;
+    const task = world?.tasks.find((t) => t.id === taskId);
+    if (!task || task.runMode !== 'live') return;
+
+    const agent = world?.agents.find((a) => a.id === task.assignedAgentId);
+    const who = agent?.name ?? 'The agent';
+
+    if (event.kind === 'task.failed') {
+      notify(`${who} could not finish “${task.title}”: ${event.reason ?? 'the run failed'}`, 'bad');
+      return;
+    }
+    if (event.kind === 'approval.requested') {
+      notify(`${who} finished “${task.title}” and needs your approval`);
+      return;
+    }
+    notify(`${who} delivered “${task.title}”`);
+  });
+
+  return null;
+}
+
+/**
  * The application shell.
  *
  * A permanent nav on the left, so every screen is one click away and none of
@@ -84,9 +118,7 @@ export function App() {
           <span className="brand-name">AI Islands</span>
         </NavLink>
         <span className="spacer" />
-        <span className="chip hide-sm" title="No AI model is called. Every agent here is simulated.">
-          Simulated world · no real AI work
-        </span>
+        <WorldModeChip />
         <ConnectionChip />
       </header>
 
@@ -125,6 +157,7 @@ export function App() {
         </main>
       </div>
 
+      <LiveRunWatcher />
       <Toasts />
     </>
   );
@@ -169,5 +202,42 @@ function WorldGate({ children }: { children: ReactNode }) {
         <p>Connecting to the live world.</p>
       </div>
     </div>
+  );
+}
+
+/**
+ * What kind of world this is, in the top bar.
+ *
+ * It says "simulated" only while that is actually true of everything in it —
+ * the moment a real agent can run, it says so instead.
+ */
+function WorldModeChip() {
+  const { world } = useWorldContext();
+  const liveCount = world?.tasks.filter(
+    (t) => t.runMode === 'live' && (t.status === 'working' || t.status === 'queued'),
+  ).length;
+
+  if (liveCount) {
+    return (
+      <span className="chip hide-sm" title="A real agent is working right now.">
+        <span className="live-tag">
+          {liveCount} live {liveCount === 1 ? 'run' : 'runs'}
+        </span>
+      </span>
+    );
+  }
+
+  if (world?.runtime.available) {
+    return (
+      <span className="chip hide-sm" title={`Tasks can be run for real on ${world.runtime.model}.`}>
+        Simulated · real agents available
+      </span>
+    );
+  }
+
+  return (
+    <span className="chip hide-sm" title="No AI model is called. Every agent here is simulated.">
+      Simulated world · no real AI work
+    </span>
   );
 }

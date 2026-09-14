@@ -20,13 +20,13 @@ export function createTaskRepository(db: Db): TaskRepository {
   const selectById = db.prepare('SELECT * FROM tasks WHERE id = ?');
   const insert = db.prepare(`
     INSERT INTO tasks (id, project_id, assigned_agent_id, title, description, type,
-                       status, priority, building_key, progress, duration_seconds,
-                       needs_approval, blocker, created_at, updated_at,
-                       started_at, completed_at)
+                       status, priority, building_key, progress, run_mode,
+                       duration_seconds, needs_approval, blocker, created_at,
+                       updated_at, started_at, completed_at)
     VALUES (@id, @project_id, @assigned_agent_id, @title, @description, @type,
-            @status, @priority, @building_key, @progress, @duration_seconds,
-            @needs_approval, @blocker, @created_at, @updated_at,
-            @started_at, @completed_at)
+            @status, @priority, @building_key, @progress, @run_mode,
+            @duration_seconds, @needs_approval, @blocker, @created_at,
+            @updated_at, @started_at, @completed_at)
   `);
   const remove = db.prepare('DELETE FROM tasks WHERE id = ?');
 
@@ -85,6 +85,7 @@ export function createTaskRepository(db: Db): TaskRepository {
         priority: task.priority,
         building_key: task.buildingKey,
         progress: task.progress,
+        run_mode: task.runMode,
         duration_seconds: task.durationSeconds,
         needs_approval: task.needsApproval ? 1 : 0,
         blocker: task.blocker,
@@ -104,6 +105,7 @@ export function createTaskRepository(db: Db): TaskRepository {
         priority: 'priority',
         assignedAgentId: 'assigned_agent_id',
         progress: 'progress',
+        runMode: 'run_mode',
         needsApproval: 'needs_approval',
         blocker: 'blocker',
         startedAt: 'started_at',

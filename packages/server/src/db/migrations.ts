@@ -451,4 +451,14 @@ export const MIGRATIONS: Migration[] = [
       CREATE INDEX idx_results_task      ON task_results(task_id);
     `,
   },
+  {
+    id: 5,
+    name: 'task_run_mode',
+    sql: /* sql */ `
+      -- How a task's progress was produced. Recorded on the row so the
+      -- interface can say which it is showing, and still say it after a
+      -- reload — 'live' means every number on this row came from a real run.
+      ALTER TABLE tasks ADD COLUMN run_mode TEXT NOT NULL DEFAULT 'simulated';
+    `,
+  },
 ];

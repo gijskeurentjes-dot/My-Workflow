@@ -4,12 +4,13 @@ import { openDatabase, type Db } from './db/sqlite.js';
 import { createSqliteRepositories } from './repositories/sqlite/index.js';
 import type { Repositories } from './repositories/types.js';
 import { Broadcaster } from './realtime/broadcaster.js';
+import { DomainEventDeriver } from './realtime/domain-events.js';
 import type { AgentEngine, EngineChanges } from './services/agents/agent-engine.js';
 import { MockAgentEngine } from './services/agents/mock-agent-engine.js';
 import { WorldService } from './services/world.service.js';
 import { WorkflowService } from './services/workflow.service.js';
 import { TaskExecutionService } from './services/task-execution.service.js';
-import { buildAgentRunners } from './services/agents/claude/runners.js';
+import { buildAgentRunners, runtimeInfo } from './services/agents/claude/runners.js';
 
 /**
  * Everything the app is built from, wired together in one place.
@@ -52,7 +53,12 @@ export interface CreateContextOptions {
 /** Choose an engine from configuration. Only 'mock' exists today. */
 function buildEngine(
   repos: Repositories,
-  options: { tickMs: number; autoAssign: boolean; onChange: (c: EngineChanges) => void },
+  options: {
+    tickMs: number;
+    autoAssign: boolean;
+    isLive: (taskId: string) => boolean;
+    onChange: (c: EngineChanges) => void;
+  },
 ): AgentEngine {
   switch (config.agentEngine) {
     case 'mock':
@@ -72,6 +78,15 @@ export function createContext(options: CreateContextOptions = {}): AppContext {
   const db = openDatabase(options.databasePath ?? config.databasePath);
   const repos = createSqliteRepositories(db);
   const broadcaster = new Broadcaster(config.heartbeatMs);
+  const domainEvents = new DomainEventDeriver(repos);
+
+  /**
+   * Set once the execution service exists, so the engine can ask whether a
+   * task is being run for real. The two are mutually referential — the engine
+   * must not simulate a live task, and a live run relies on the engine to walk
+   * its agent about — and this is the smaller of the two knots to tie.
+   */
+  let execution: TaskExecutionService | null = null;
 
   /**
    * Turn a set of changes into stream events.
@@ -81,6 +96,11 @@ export function createContext(options: CreateContextOptions = {}): AppContext {
    */
   const publish = (changes: EngineChanges): void => {
     const at = Date.now();
+
+    // Derived before anything is sent, so the named events and the rows they
+    // describe are always in the same batch.
+    const events = domainEvents.derive(changes);
+
     if (changes.agents.length || changes.tasks.length) {
       broadcaster.broadcast({
         type: 'tick',
@@ -101,21 +121,27 @@ export function createContext(options: CreateContextOptions = {}): AppContext {
     if (changes.projectsChanged) {
       broadcaster.broadcast({ type: 'projects', at, projects: repos.projects.list() });
     }
+    if (events.length) {
+      broadcaster.broadcast({ type: 'events', at, events });
+    }
   };
 
   const engine = buildEngine(repos, {
     tickMs: options.tickMs ?? config.agentTickMs,
     autoAssign: options.autoAssign ?? config.mockAutoAssign,
+    // The simulation keeps walking a live agent about, but never touches the
+    // progress of work a real model is doing.
+    isLive: (taskId) => execution?.isRunning(taskId) ?? false,
     onChange: publish,
   });
 
-  const world = new WorldService(repos, engine, config.activityLimit);
+  const world = new WorldService(repos, engine, config.activityLimit, runtimeInfo);
   const workflow = new WorkflowService(repos);
 
   // Real agent execution runs beside the simulation rather than inside it: a
   // live run drives the same states the mock does, so nothing downstream —
   // the stream, the screens, the approval queue — can tell them apart.
-  const execution = new TaskExecutionService(repos, {
+  execution = new TaskExecutionService(repos, {
     runners: buildAgentRunners(),
     publish,
     maxSearches: config.agentMaxSearches,
@@ -148,8 +174,11 @@ export function createContext(options: CreateContextOptions = {}): AppContext {
     publish,
 
     resetDemoData(): void {
+      execution?.cancelAll();
       repos.reset();
       seedWorld(repos);
+      // The new world is the baseline, not a burst of "everything was created".
+      domainEvents.seed();
       // A reset changes everything, so send a whole snapshot rather than trying
       // to describe the delta.
       broadcaster.broadcast({ type: 'snapshot', at: Date.now(), world: world.snapshot() });

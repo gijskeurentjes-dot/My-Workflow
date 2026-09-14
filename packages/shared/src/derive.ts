@@ -67,12 +67,21 @@ export function describeAgent(agent: Agent, task: Task | null, thoughtIndex = 0)
       }
       if (task) {
         const verb = TASK_TYPES[task.type].verb;
-        return `${verb.charAt(0).toUpperCase()}${verb.slice(1)} — ${profile.thoughts[thoughtIndex % profile.thoughts.length] ?? ''}`.trim();
+        const doing = `${verb.charAt(0).toUpperCase()}${verb.slice(1)}`;
+        // The idle thoughts are simulation flavour. Putting invented musings in
+        // a real agent's mouth would be a small lie about a real thing, so live
+        // work says what it is working on instead.
+        return task.runMode === 'live'
+          ? `${doing} “${task.title}” — a real agent is doing this`
+          : `${doing} — ${profile.thoughts[thoughtIndex % profile.thoughts.length] ?? ''}`.trim();
       }
       return profile.thoughts[thoughtIndex % profile.thoughts.length] ?? 'Working…';
     }
     case 'queued':
-      return task ? `Queued to start “${task.title}”` : 'Queued';
+      if (!task) return 'Queued';
+      return task.runMode === 'live'
+        ? `Taking on “${task.title}” — the run is starting`
+        : `Queued to start “${task.title}”`;
     case 'waiting_approval':
       return `At ${PLOTS[APPROVAL_PLOT].label}, waiting for your decision`;
     case 'paused':

@@ -1372,3 +1372,111 @@ textarea.input {
   max-height: 340px;
   overflow-y: auto;
 }
+
+/* ── A real agent's output ─────────────────────────────────────────────────
+   The report a live run produced, and the decision it is waiting on. Both sit
+   inside a task card, so they are inset rather than boxed again. */
+
+.approval-ask {
+  margin-top: 10px;
+  padding: 9px 11px;
+  border-radius: 10px;
+  background: var(--warn-bg);
+  border: 1px solid var(--warn);
+}
+
+.approval-ask p {
+  margin: 3px 0 0;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--ink);
+}
+
+.result {
+  margin-top: 10px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: var(--sunken);
+  border: 1px solid var(--line);
+}
+
+.result-summary {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: var(--ink);
+}
+
+.result-body {
+  margin-top: 6px;
+}
+
+.result-body h5 {
+  margin: 12px 0 5px;
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+
+.result-list {
+  margin: 0;
+  padding-left: 18px;
+  font-size: 12.5px;
+  line-height: 1.6;
+  color: var(--ink-2);
+}
+
+.result-list li + li {
+  margin-top: 6px;
+}
+
+.result-list a {
+  color: var(--brand);
+}
+
+.result-cites {
+  margin-left: 6px;
+  font-size: 11px;
+}
+
+.result-cites a + a {
+  margin-left: 6px;
+}
+
+/* A live agent, in the world and in the rail. */
+.live-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--violet);
+}
+
+.live-tag::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: currentColor;
+  animation: livePulse 1.6s ease-in-out infinite;
+}
+
+@keyframes livePulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.25;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .live-tag::before {
+    animation: none;
+  }
+}

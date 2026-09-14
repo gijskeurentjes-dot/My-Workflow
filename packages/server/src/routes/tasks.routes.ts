@@ -9,6 +9,7 @@ import {
   type TaskType,
 } from '@ai-islands/shared';
 import type { AppContext } from '../context.js';
+import { refuse } from '../errors.js';
 import { command, parseBody } from './helpers.js';
 
 const listQuery = z.object({
@@ -102,10 +103,12 @@ export function createTasksRouter(ctx: AppContext): Router {
   });
 
   router.delete('/:id', (req, res) => {
-    command(ctx, res, () => ({
-      changes: ctx.workflow.deleteTask(req.params.id),
-      body: { ok: true },
-    }));
+    command(ctx, res, () => {
+      // Deleting the task a model is working on leaves the run with nowhere to
+      // put its answer, so stop it first.
+      ctx.execution.cancel(req.params.id);
+      return { changes: ctx.workflow.deleteTask(req.params.id), body: { ok: true } };
+    });
   });
 
   // ── Actions ─────────────────────────────────────────────────────────────
@@ -122,16 +125,38 @@ export function createTasksRouter(ctx: AppContext): Router {
   });
 
   router.post('/:id/unassign', (req, res) => {
-    command(ctx, res, () => ({
-      changes: ctx.workflow.unassignTask(req.params.id),
-      body: ctx.world.findTaskView(req.params.id),
-    }));
+    command(ctx, res, () => {
+      ctx.execution.cancel(req.params.id);
+      return {
+        changes: ctx.workflow.unassignTask(req.params.id),
+        body: ctx.world.findTaskView(req.params.id),
+      };
+    });
   });
 
   for (const [path, run] of [
     ['start', (id: string) => ctx.workflow.startTask(id)],
-    ['pause', (id: string) => ctx.workflow.pauseTask(id)],
-    ['cancel', (id: string) => ctx.workflow.cancelTask(id)],
+    [
+      'pause',
+      (id: string) => {
+        // A model call cannot be suspended half-way and resumed later, so
+        // offering to pause one would be a promise the runtime cannot keep.
+        if (ctx.execution.isRunning(id)) {
+          throw refuse(
+            'This work is being done by a real agent, and a live run cannot be paused. Cancel it instead.',
+          );
+        }
+        return ctx.workflow.pauseTask(id);
+      },
+    ],
+    [
+      'cancel',
+      (id: string) => {
+        // Stop the run before the row says cancelled, so the two agree.
+        ctx.execution.cancel(id);
+        return ctx.workflow.cancelTask(id);
+      },
+    ],
     ['retry', (id: string) => ctx.workflow.retryTask(id)],
     ['reset', (id: string) => ctx.workflow.resetTask(id)],
   ] as const) {

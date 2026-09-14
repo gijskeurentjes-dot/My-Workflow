@@ -3,9 +3,11 @@
 Nova the Researcher is backed by a real Claude model. This page is how to
 configure it, how to run it, and what it is and is not allowed to do.
 
-Everything else in the world is still the mock engine. A live run drives the
-same states the mock does, so nothing downstream — the board, the approval
-queue, the activity log — can tell the two apart.
+Everything else in the world is still the mock engine, and the island shows
+which is which. A live run drives the same states the mock does — so the board,
+the approval queue and the activity log work identically — but nothing invents
+progress on a real agent's behalf, and the world never says "working" unless the
+backend says so.
 
 ---
 
@@ -143,7 +145,99 @@ trusted.
 
 ---
 
-## 4. What an agent may not do
+## 4. What the island shows
+
+The visual world represents the backend's actual state. Nothing on screen is a
+guess, and the one rule everything else follows is: **the world never shows an
+agent working unless the backend says it is working.**
+
+### Who does what
+
+The simulation and the real runtime share the island, and the split is clean:
+
+| | Simulated task | Live task |
+| --- | --- | --- |
+| Walking between buildings | mock engine | **mock engine** |
+| Progress | mock engine, from a clock | **the run, from what it reported** |
+| Finishing, approvals, delivery | mock engine | **the run, then your decision** |
+
+Locomotion is presentation, and it is the same either way — so a live agent
+still walks to the Research Library, still carries work to Headquarters, still
+hauls the crate to the Delivery Depot. What the simulation never touches is a
+number a model is responsible for: while a run is in flight, the engine will not
+advance its progress and cannot finish the task behind the model's back.
+
+### What you see, step by step
+
+**When a run starts.** The task becomes `queued` and the agent sets off for the
+building the work happens at. The moment the model call actually begins, both
+become `working` — not before. The bot carries a plate with the task title, the
+progress panel starts, and the activity log records the start.
+
+**While it runs.** Progress moves when the run reports something real: it
+started, it made a search, it is writing up. It is not a guess at elapsed time —
+nothing can know how much of a research run is left — so the bar is labelled
+*milestones reached* rather than pretending to be a percentage of the work. Each
+search is written into the activity log as it happens.
+
+**When it finishes.** The result is stored, the task goes to Waiting for
+Approval, and the agent walks to Headquarters carrying the work. The report
+appears on the task with its findings, sources and open questions, and
+**Approve** / **Send back** sit underneath it. Approving sends the agent to the
+depot; arriving there is what completes the task.
+
+**When it fails.** The task shows Failed with the reason in plain words — *"The
+API rejected the credentials"*, not a stack trace. The bot stays where it was,
+still assigned, and **Run again** re-runs it. Nothing is lost: the task, its
+history and every search it made before it broke are all still there.
+
+**When it is stopped.** Cancel aborts the run mid-flight; the task is cancelled
+and the agent is freed. Pause is not offered for a live run, because a model call
+cannot be suspended and picked up later — the server refuses it rather than
+pretending.
+
+### Telling the two apart
+
+Every task records how its progress is being produced, so the interface can say
+which it is showing you — and still say it after a reload:
+
+- a **live agent** badge on the task, and a violet marker on the bot's plate
+- the progress bar says *live run* or *simulated progress*
+- the top bar counts live runs while any are going
+- **Run for real** and **Simulate** are separate buttons, because one calls a
+  model and the other does not, and a single button that might do either would
+  be a trap
+
+Simulated demo mode is unchanged and always available: with no API key
+configured, everything works exactly as it did before.
+
+### The event contract
+
+The server pushes two kinds of message. Rows (`tick`, `approvals`, `projects`,
+`activity`) are **what is now true** — the client renders those. Named events
+(`events`) are **what happened**, which is what you need in order to react:
+
+| Event | Means | Carries |
+| ----- | ----- | ------- |
+| `agent.status` | an agent changed state | `from`, `to`, `taskId` |
+| `task.created` | a task was added | `projectId`, `title` |
+| `task.started` | work actually began | `agentId`, `runMode` |
+| `task.progress` | progress moved a whole point | `progress`, `runMode` |
+| `task.completed` | delivered | `agentId`, `runMode` |
+| `task.failed` | stopped, with a reason | `agentId`, `reason` |
+| `approval.requested` | needs your decision | `taskId`, `summary` |
+| `approval.resolved` | you decided | `decision` |
+
+They are **derived from the rows that changed**, in one place on the server
+(`realtime/domain-events.ts`), rather than emitted by each transition. That
+means an event can never disagree with the row it describes, cannot be forgotten
+at a call site, and does not care whether the simulation or a real agent caused
+it. `DOMAIN_EVENT_KINDS` in the shared package is the list, with a compile-time
+check that nothing is missing from it.
+
+---
+
+## 5. What an agent may not do
 
 The security rules are enforced in code before a run starts, not left to the
 model's judgement.
@@ -176,7 +270,7 @@ Every run has a ceiling, stored per agent and editable on its page:
 
 ---
 
-## 5. Tests
+## 6. Tests
 
 ```bash
 npm test
@@ -191,11 +285,21 @@ The suite covers the honesty check, `pause_turn` resumption, refusals, the time
 limit, cancellation, the forbidden-tool guard, project-scope enforcement, and
 usage being recorded.
 
+The integration itself is tested the same way, with the simulation and a real
+run driving the world at once: that the agent still walks to its building, that
+the simulation never invents progress for a live task, that a finished run sends
+the agent to Headquarters and an approved one to the depot, that a failure keeps
+the bot, the task and the logs, and that every transition produces the event a
+browser would need.
+
 ---
 
-## 6. What is not wired up yet
+## 7. What is not wired up yet
 
-The live runtime is deliberately **not** connected to the visual world. There
-is no "run for real" button, and the engine that walks agents around the island
-is still the mock. Execution is reachable from the command line and the API so
-that the backend can be proven on its own first.
+- Only the Researcher has a live engine. Running any other archetype for real is
+  refused rather than silently simulated.
+- There is no cost ceiling in currency. A run is bounded by time, output tokens
+  and searches, which are the levers actually available.
+- Auto-assignment is the simulation's, not a real project manager's: an idle
+  agent picking work off the board never starts a live run by itself. A live run
+  is always something you asked for.

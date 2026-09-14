@@ -176,7 +176,7 @@ export function Workspace() {
             </div>
           </div>
 
-          <SimulatedNotice />
+          <SimulatedNotice runtime={world.runtime} />
 
           {summaries.map((summary) => {
             const displays = agentsForProject(world, summary.project.id, clock);
@@ -216,6 +216,11 @@ export function Workspace() {
                           </div>
                           <StatusPill status={d.agent.status} />
                         </div>
+                        {d.task?.runMode === 'live' && (
+                          <div style={{ marginTop: 4 }}>
+                            <span className="live-tag">Live agent</span>
+                          </div>
+                        )}
                         <div className="bot-line">{d.doing}</div>
                         <div className="bot-line" style={{ marginTop: 4, color: 'var(--ink-3)' }}>
                           {d.agent.movement
@@ -231,6 +236,11 @@ export function Workspace() {
                                 : d.agent.status === 'paused'
                                   ? 'info'
                                   : 'ok'
+                            }
+                            note={
+                              d.task.runMode === 'live'
+                                ? 'live run — milestones reached'
+                                : undefined
                             }
                           />
                         )}

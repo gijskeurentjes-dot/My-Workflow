@@ -28,6 +28,13 @@ export interface Toast {
 
 interface CommandContextValue {
   run(key: string, fn: () => Promise<unknown>, successMessage?: string): Promise<boolean>;
+  /**
+   * Say something that was not caused by a click.
+   *
+   * A live agent finishes, or fails, while you are looking at another screen —
+   * that is worth a word, and it has no button to hang off.
+   */
+  notify(message: string, tone?: Toast['tone']): void;
   isPending(key: string): boolean;
   /** True while any command at all is in flight. */
   busy: boolean;
@@ -89,15 +96,21 @@ export function CommandProvider({ children }: { children: ReactNode }) {
     [push],
   );
 
+  const notify = useCallback(
+    (message: string, tone: Toast['tone'] = 'ok') => push(message, tone),
+    [push],
+  );
+
   const value = useMemo<CommandContextValue>(
     () => ({
       run,
+      notify,
       isPending: (key: string) => pending.has(key),
       busy: pending.size > 0,
       toasts,
       dismiss,
     }),
-    [run, pending, toasts, dismiss],
+    [run, notify, pending, toasts, dismiss],
   );
 
   return <CommandContext.Provider value={value}>{children}</CommandContext.Provider>;

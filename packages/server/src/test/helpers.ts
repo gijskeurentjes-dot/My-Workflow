@@ -47,6 +47,7 @@ export function createTestWorld(options: TestWorldOptions = {}): TestWorld {
     tickMs: options.tickMs ?? 250,
     autoAssign: options.autoAssign ?? false,
     ...(options.celebrationMs !== undefined ? { celebrationMs: options.celebrationMs } : {}),
+    ...(options.isLive ? { isLive: options.isLive } : {}),
     ...(options.onChange ? { onChange: options.onChange } : {}),
   });
 

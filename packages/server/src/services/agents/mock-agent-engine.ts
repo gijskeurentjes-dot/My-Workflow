@@ -28,6 +28,16 @@ export interface MockAgentEngineOptions {
   autoAssign?: boolean;
   /** How long an agent celebrates a delivery before returning to idle. */
   celebrationMs?: number;
+  /**
+   * Whether a real agent is doing this task right now.
+   *
+   * A live run owns its own progress, so the simulation must not invent any:
+   * it keeps walking the agent about — locomotion is presentation, and the same
+   * either way — but never advances a number a model is responsible for. Without
+   * this the world would show progress nobody earned, and would finish the task
+   * behind the model's back.
+   */
+  isLive?: (taskId: string) => boolean;
   /** Called after any tick that changed something. */
   onChange?: (changes: EngineChanges) => void;
 }
@@ -47,6 +57,7 @@ export class MockAgentEngine implements AgentEngine {
   private readonly tickMs: number;
   private readonly autoAssign: boolean;
   private readonly celebrationMs: number;
+  private readonly isLive: (taskId: string) => boolean;
   private readonly onChange: ((changes: EngineChanges) => void) | undefined;
 
   private timer: NodeJS.Timeout | null = null;
@@ -57,6 +68,7 @@ export class MockAgentEngine implements AgentEngine {
     this.tickMs = options.tickMs ?? 500;
     this.autoAssign = options.autoAssign ?? true;
     this.celebrationMs = options.celebrationMs ?? 3000;
+    this.isLive = options.isLive ?? (() => false);
     this.onChange = options.onChange;
   }
 
@@ -126,8 +138,12 @@ export class MockAgentEngine implements AgentEngine {
       return;
     }
 
-    // Standing in the right place — do the work of this state.
-    if (task.status === 'working') this.doWork(agent, task, elapsedMs, now, changes);
+    // Standing in the right place — do the work of this state. A task a real
+    // agent is running is left entirely alone: its progress is the model's to
+    // report, and simulating any of it would be a lie on screen.
+    if (task.status === 'working' && !this.isLive(task.id)) {
+      this.doWork(agent, task, elapsedMs, now, changes);
+    }
   }
 
   /** Where this agent should be standing, given the task it holds. */
@@ -135,8 +151,12 @@ export class MockAgentEngine implements AgentEngine {
     if (task.status === 'delivering') return DELIVERY_PLOT;
     if (task.status === 'waiting_approval') return APPROVAL_PLOT;
     // The task's own building is what makes the island legible: research at the
-    // library, code at the workshop, slides at the studio.
-    if (task.status === 'working' || task.status === 'failed') return task.buildingKey;
+    // library, code at the workshop, slides at the studio. Queued work heads
+    // there too — a live run spends its first moments being set up, and the
+    // walk is exactly what that looks like.
+    if (task.status === 'working' || task.status === 'queued' || task.status === 'failed') {
+      return task.buildingKey;
+    }
     // Paused work is held exactly where it stopped.
     if (task.status === 'paused') return agent.currentLocation;
     return REST_PLOT;
@@ -195,7 +215,7 @@ export class MockAgentEngine implements AgentEngine {
       return;
     }
 
-    if (arrivedAt === task.buildingKey && task.status === 'working') {
+    if (arrivedAt === task.buildingKey && (task.status === 'working' || task.status === 'queued')) {
       const verb = TASK_TYPES[task.type].verb;
       this.log(
         changes,

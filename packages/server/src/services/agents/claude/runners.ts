@@ -1,5 +1,7 @@
 import Anthropic from '@anthropic-ai/sdk';
+import type { RuntimeInfo } from '@ai-islands/shared';
 import { config, hasAgentCredentials } from '../../../config.js';
+import { LIVE_ARCHETYPES } from './nova.js';
 import { ResearchRunner } from './research-runner.js';
 import type { AgentRunner } from './types.js';
 
@@ -25,12 +27,22 @@ export function buildAgentRunners(client?: Anthropic): Map<string, AgentRunner> 
   return runners;
 }
 
-/** Reported to the UI so it can say whether live execution is available. */
-export function runtimeInfo(): { available: boolean; model: string; archetypes: string[] } {
-  const runners = buildAgentRunners();
+/**
+ * Reported to the UI so it can say whether live execution is available.
+ *
+ * Derived from configuration rather than by building runners, because this is
+ * read on every snapshot and constructing an API client to answer a question
+ * about configuration would be wasteful.
+ */
+export function runtimeInfo(): RuntimeInfo {
+  const configured = hasAgentCredentials();
   return {
-    available: runners.size > 0,
+    // Today these coincide; they are separate fields because "a key is set" and
+    // "something can actually run" are different claims, and the UI makes both.
+    available: configured && LIVE_ARCHETYPES.length > 0,
+    credentialsConfigured: configured,
     model: config.agentModel,
-    archetypes: [...runners.keys()],
+    archetypes: configured ? [...LIVE_ARCHETYPES] : [],
+    maxSearches: config.agentMaxSearches,
   };
 }

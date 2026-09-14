@@ -26,6 +26,28 @@ import {
   type RunEvent,
 } from './agents/claude/types.js';
 
+/** A resolved context plus the bookkeeping one run needs while it is going. */
+interface RunContext extends AgentRunContext {
+  startedAt: number;
+  /** How many searches have actually been made, counted as they happen. */
+  searches: number;
+}
+
+/**
+ * The phases a research run passes through, as progress.
+ *
+ * These are not a guess at elapsed time — nothing can know how long a run has
+ * left. They are the milestones the run actually reports: it started, it
+ * searched n times, it is writing up. The bar only ever says what has happened.
+ */
+const STARTED_PROGRESS = 5;
+const SEARCH_CEILING = 70;
+const STRUCTURING_PROGRESS = 88;
+
+const searchProgress = (searches: number, maxSearches: number): number =>
+  STARTED_PROGRESS +
+  (SEARCH_CEILING - STARTED_PROGRESS) * Math.min(1, searches / Math.max(1, maxSearches));
+
 export interface TaskExecutionOptions {
   /** Runners by archetype. Only archetypes with one can be executed for real. */
   runners: Map<string, AgentRunner>;
@@ -109,7 +131,7 @@ export class TaskExecutionService {
     try {
       const result = await runner.run(
         context,
-        (event) => this.onEvent?.(event),
+        (event) => this.onRunEvent(context, event),
         controller.signal,
       );
       return this.recordSuccess(context, result);
@@ -126,6 +148,44 @@ export class TaskExecutionService {
       clearTimeout(deadline);
       this.running.delete(taskId);
     }
+  }
+
+  /**
+   * Turn a runner's progress into rows the world can show.
+   *
+   * This is the join between a model doing something and an island showing it.
+   * Nothing here invents state: the agent is marked working when the run
+   * actually starts, and every number written is a count of something that
+   * happened — a search that was made, a phase that was reached.
+   */
+  private onRunEvent(context: RunContext, event: RunEvent): void {
+    switch (event.type) {
+      case 'started':
+        // Queued until now. "Working" appears on screen at the moment the
+        // model call begins, and not a moment before it.
+        this.markWorking(context);
+        break;
+
+      case 'searching': {
+        context.searches += 1;
+        this.markProgress(
+          context,
+          searchProgress(context.searches, context.maxSearches),
+          'progress',
+          `${context.agent.name} searched the web for “${event.query}”`,
+        );
+        break;
+      }
+
+      case 'structuring':
+        this.markProgress(context, STRUCTURING_PROGRESS, null, null);
+        break;
+
+      default:
+        break;
+    }
+
+    this.onEvent?.(event);
   }
 
   /** Stop an in-flight run. Returns false if nothing was running. */
@@ -151,7 +211,7 @@ export class TaskExecutionService {
    * better to say "this agent asks for a tool it may not have" than to start a
    * run and discover it half-way through.
    */
-  private prepare(taskId: Id): AgentRunContext & { startedAt: number } {
+  private prepare(taskId: Id): RunContext {
     const task = this.repos.tasks.findById(taskId);
     if (!task) throw notFound('Task');
 
@@ -170,6 +230,18 @@ export class TaskExecutionService {
 
     const agent = this.repos.agents.findById(task.assignedAgentId);
     if (!agent) throw notFound('Agent');
+
+    // One agent, one job. Starting a run for someone who is part-way through
+    // something else would leave two tasks pointing at one bot, and the world
+    // can only draw it in one place.
+    if (agent.currentTaskId && agent.currentTaskId !== task.id) {
+      const held = this.repos.tasks.findById(agent.currentTaskId);
+      throw refuse(
+        held
+          ? `${agent.name} is already on “${held.title}”. Finish or reassign that first.`
+          : `${agent.name} is already busy.`,
+      );
+    }
 
     if (!isLiveArchetype(agent.archetype)) {
       throw refuse(
@@ -200,6 +272,7 @@ export class TaskExecutionService {
       maxOutputTokens: agent.maxOutputTokens,
       maxSearches: this.maxSearches,
       startedAt: Date.now(),
+      searches: 0,
     };
   }
 
@@ -228,20 +301,30 @@ export class TaskExecutionService {
 
   // ── Recording what happened ───────────────────────────────────────────────
 
-  private markQueued(context: AgentRunContext & { startedAt: number }): void {
+  /**
+   * Accept the work, before anything has been asked of the model.
+   *
+   * The task is `queued`, not `working`: the world must never show an agent
+   * working until the backend reports that it is, and at this point the run has
+   * not begun. `runMode` is set here so every screen knows, from the first
+   * frame, that these numbers will come from a real run rather than the clock.
+   */
+  private markQueued(context: RunContext): void {
     const changes = new ChangeSet();
     const { task, agent } = context;
 
     changes.task(
       this.repos.tasks.update(task.id, {
-        status: 'working',
+        status: 'queued',
+        runMode: 'live',
+        progress: 0,
         blocker: null,
         ...(task.startedAt === null ? { startedAt: context.startedAt } : {}),
       }),
     );
     changes.agent(
       this.repos.agents.update(agent.id, {
-        status: 'working',
+        status: 'queued',
         currentTaskId: task.id,
         progress: 0,
         updatedAt: context.startedAt,
@@ -249,19 +332,75 @@ export class TaskExecutionService {
     );
     this.log(
       changes,
-      'started',
-      `${agent.name} started “${task.title}” on ${context.model}`,
+      'queued',
+      `${agent.name} accepted “${task.title}” — starting on ${context.model}`,
       context,
       context.startedAt,
     );
     this.publish(changes.build());
   }
 
-  private recordSuccess(
-    context: AgentRunContext & { startedAt: number },
-    result: AgentRunResult,
-  ): TaskResult {
+  /** The model call has begun. Only now is the agent actually working. */
+  private markWorking(context: RunContext): void {
+    const now = Date.now();
+    const changes = new ChangeSet();
     const { task, agent } = context;
+
+    changes.task(
+      this.repos.tasks.update(task.id, { status: 'working', progress: STARTED_PROGRESS }),
+    );
+    changes.agent(
+      this.repos.agents.update(agent.id, {
+        status: 'working',
+        progress: STARTED_PROGRESS,
+        updatedAt: now,
+      }),
+    );
+    this.log(
+      changes,
+      'started',
+      `${agent.name} started working on “${task.title}”`,
+      context,
+      now,
+    );
+    this.publish(changes.build());
+  }
+
+  /**
+   * Move progress forward, never back.
+   *
+   * A research run cannot report a percentage of itself honestly — nothing
+   * knows how many searches are left. So this is a count of phases reached, and
+   * it is monotonic: what the bar says has happened, has happened.
+   */
+  private markProgress(
+    context: RunContext,
+    progress: number,
+    eventType: ActivityEventType | null,
+    message: string | null,
+  ): void {
+    const now = Date.now();
+    const current = this.repos.tasks.findById(context.task.id);
+    if (!current || current.status !== 'working') return;
+
+    const next = Math.max(current.progress, progress);
+    const changes = new ChangeSet();
+    changes.task(this.repos.tasks.update(context.task.id, { progress: next }));
+    changes.agent(
+      this.repos.agents.update(context.agent.id, { progress: next, updatedAt: now }),
+    );
+    if (eventType && message) this.log(changes, eventType, message, context, now);
+    this.publish(changes.build());
+  }
+
+  private recordSuccess(
+    context: RunContext,
+    result: AgentRunResult,
+  ): TaskResult | null {
+    const { task, agent } = context;
+    // The task can be deleted while the model is still thinking. There is then
+    // nothing to attach the answer to, and nothing worth failing over.
+    if (!this.repos.tasks.findById(task.id)) return null;
     const now = Date.now();
 
     const stored = this.repos.transaction(() => {
@@ -349,10 +488,11 @@ export class TaskExecutionService {
   }
 
   private recordStopped(
-    context: AgentRunContext & { startedAt: number },
+    context: RunContext,
     timedOut: boolean,
   ): null {
     const { task, agent } = context;
+    if (!this.repos.tasks.findById(task.id)) return null;
     const now = Date.now();
     const changes = new ChangeSet();
 
@@ -379,10 +519,11 @@ export class TaskExecutionService {
   }
 
   private recordFailure(
-    context: AgentRunContext & { startedAt: number },
+    context: RunContext,
     error: unknown,
   ): void {
     const { task, agent } = context;
+    if (!this.repos.tasks.findById(task.id)) return;
     const now = Date.now();
     const changes = new ChangeSet();
     const reason = describeFailure(error);

@@ -29,7 +29,7 @@ export function Activity() {
         </p>
       </header>
 
-      <SimulatedNotice />
+      <SimulatedNotice runtime={world.runtime} />
 
       <div className="row" style={{ marginBottom: 16, flexWrap: 'wrap' }}>
         <label className="row" style={{ gap: 6 }}>

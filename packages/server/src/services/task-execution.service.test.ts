@@ -128,7 +128,8 @@ describe('running a task for real', () => {
 
   it('marks the task working while it runs, then waiting for approval', async () => {
     let statusDuringRun = '';
-    const runner = new StubRunner(async () => {
+    const runner = new StubRunner(async (context, emit) => {
+      emit({ type: 'started', taskId: context.task.id, model: context.model, at: Date.now() });
       statusDuringRun = h.world.repos.tasks.findById(h.taskId)!.status;
       return successResult();
     });
@@ -140,6 +141,84 @@ describe('running a task for real', () => {
     expect(h.world.repos.tasks.findById(h.taskId)!.status).toBe('waiting_approval');
     expect(h.world.repos.agents.findById(h.agentId)!.status).toBe('waiting_approval');
     expect(h.world.repos.approvals.list({ status: 'pending' })).toHaveLength(1);
+  });
+
+  /**
+   * The rule the visual world depends on: "Working" on screen means a model is
+   * working. Between accepting the task and the first token, the honest state
+   * is Queued.
+   */
+  it('stays queued until the model call actually begins', async () => {
+    const seen: string[] = [];
+    const runner = new StubRunner(async (context, emit) => {
+      seen.push(`before: ${h.world.repos.tasks.findById(h.taskId)!.status}`);
+      seen.push(`agent: ${h.world.repos.agents.findById(h.agentId)!.status}`);
+      emit({ type: 'started', taskId: context.task.id, model: context.model, at: Date.now() });
+      seen.push(`after: ${h.world.repos.tasks.findById(h.taskId)!.status}`);
+      return successResult();
+    });
+    h = setup(runner);
+
+    await h.service.execute(h.taskId);
+
+    expect(seen).toEqual(['before: queued', 'agent: queued', 'after: working']);
+  });
+
+  it('records the work as live, not simulated', async () => {
+    const runner = new StubRunner(async () => successResult());
+    h = setup(runner);
+
+    await h.service.execute(h.taskId);
+
+    expect(h.world.repos.tasks.findById(h.taskId)!.runMode).toBe('live');
+  });
+
+  /**
+   * Progress counts what happened rather than guessing at elapsed time, and it
+   * only ever moves forward.
+   */
+  it('advances progress as the run reports real milestones', async () => {
+    const readings: number[] = [];
+    const read = () => readings.push(h.world.repos.tasks.findById(h.taskId)!.progress);
+
+    const runner = new StubRunner(async (context, emit) => {
+      const at = Date.now();
+      read();
+      emit({ type: 'started', taskId: context.task.id, model: context.model, at });
+      read();
+      emit({ type: 'searching', taskId: context.task.id, query: 'one', at });
+      read();
+      emit({ type: 'searching', taskId: context.task.id, query: 'two', at });
+      read();
+      emit({ type: 'structuring', taskId: context.task.id, at });
+      read();
+      return successResult();
+    });
+    h = setup(runner);
+
+    await h.service.execute(h.taskId);
+
+    expect(readings[0]).toBe(0);
+    for (let i = 1; i < readings.length; i += 1) {
+      expect(readings[i]!).toBeGreaterThan(readings[i - 1]!);
+    }
+    expect(readings.at(-1)!).toBeLessThan(100);
+    // Only a finished run reaches 100.
+    expect(h.world.repos.tasks.findById(h.taskId)!.progress).toBe(100);
+  });
+
+  it('writes each search into the activity log', async () => {
+    const runner = new StubRunner(async (context, emit) => {
+      emit({ type: 'started', taskId: context.task.id, model: context.model, at: Date.now() });
+      emit({ type: 'searching', taskId: context.task.id, query: 'mid-market SaaS', at: Date.now() });
+      return successResult();
+    });
+    h = setup(runner);
+
+    await h.service.execute(h.taskId);
+
+    const messages = h.world.repos.activity.list({ taskId: h.taskId }).map((e) => e.message);
+    expect(messages.some((m) => m.includes('mid-market SaaS'))).toBe(true);
   });
 
   it('delivers without asking when neither the task nor the agent needs sign-off', async () => {
@@ -349,6 +428,22 @@ describe('what a run is not allowed to do', () => {
     h.world.workflow.assignTask(h.taskId, agent.id);
 
     await expect(h.service.execute(h.taskId)).rejects.toThrow(/Researcher/i);
+  });
+
+  it('refuses to start a second run for an agent who is already working', async () => {
+    const runner = new StubRunner(async () => successResult());
+    h = setup(runner);
+
+    // A second task, assigned to the same agent while they hold the first.
+    const { task: other } = h.world.workflow.createTask({
+      projectId: h.projectId,
+      title: 'Something else entirely',
+      type: 'research',
+    });
+    h.world.repos.agents.update(h.agentId, { currentTaskId: other.id });
+
+    await expect(h.service.execute(h.taskId)).rejects.toThrow(/already on/i);
+    expect(runner.seen).toHaveLength(0);
   });
 
   it('refuses an unassigned task', async () => {

@@ -1,5 +1,11 @@
 import { useState } from 'react';
-import { ARCHETYPE_LIST, PLOTS, STREAM_PATH } from '@ai-islands/shared';
+import {
+  ARCHETYPES,
+  ARCHETYPE_LIST,
+  PLOTS,
+  STREAM_PATH,
+  type AgentArchetype,
+} from '@ai-islands/shared';
 import { Avatar } from '../components/ui.js';
 import { useTheme } from '../useTheme.js';
 import { useWorldContext, useWorld } from '../world/WorldProvider.js';
@@ -62,8 +68,9 @@ export function Settings() {
             <div className="banner">
               <span aria-hidden="true">⚠️</span>
               <span>
-                Nothing here calls an AI model. Progress bars, walking, approvals and deliveries are
-                produced by a state machine on the server.
+                The simulation drives the world: walking, progress, approvals and deliveries. A task
+                run for real bypasses it — the model reports what it is doing, and the simulation
+                only walks the agent there.
               </span>
             </div>
             <div className="kv">
@@ -87,11 +94,49 @@ export function Settings() {
               <b className="mono">{STREAM_PATH}</b>
             </div>
             <p className="muted" style={{ marginTop: 12 }}>
-              What is real is the <b>shape</b> of the work. Each agent already carries what a live
-              one would need: responsibilities that read as a system prompt, a tool list, and its
-              approval rules. Pointing the engine at real agents replaces the simulation behind this
-              interface, not the interface.
+              Each agent carries what a live one needs: responsibilities that read as a system
+              prompt, a tool list, and its approval rules. Running a task for real uses exactly
+              those, and writes the same states the simulation does — which is why the interface did
+              not have to change to show it.
             </p>
+          </section>
+
+          <section className="card">
+            <h4>Real agents</h4>
+            <div className="kv">
+              <span>Live execution</span>
+              <b>{world.runtime.available ? 'Available' : 'Not configured'}</b>
+            </div>
+            <div className="kv">
+              <span>API key</span>
+              {/* Whether one is set. Never which one. */}
+              <b>{world.runtime.credentialsConfigured ? 'Configured' : 'Not set'}</b>
+            </div>
+            <div className="kv">
+              <span>Model</span>
+              <b className="mono">{world.runtime.model}</b>
+            </div>
+            <div className="kv">
+              <span>Can run for real</span>
+              <b>
+                {world.runtime.archetypes.length
+                  ? world.runtime.archetypes
+                      .map((key) => ARCHETYPES[key as AgentArchetype]?.title ?? key)
+                      .join(', ')
+                  : 'Nobody yet'}
+              </b>
+            </div>
+            <div className="kv">
+              <span>Searches per run</span>
+              <b className="mono">{world.runtime.maxSearches}</b>
+            </div>
+            {!world.runtime.credentialsConfigured && (
+              <p className="muted" style={{ marginTop: 12 }}>
+                Set <span className="mono">ANTHROPIC_API_KEY</span> in{' '}
+                <span className="mono">.env</span> and restart the server to run the Researcher for
+                real. Without it everything keeps working on the simulation.
+              </p>
+            )}
           </section>
         </div>
 

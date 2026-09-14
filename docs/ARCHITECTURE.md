@@ -53,6 +53,7 @@ services/task-execution.service.ts  Runs one task against a real agent
 scripts/run-nova.ts           The command-line test task
 errors.ts                     WorkflowError, carrying the HTTP status with the rule
 realtime/broadcaster.ts       The SSE hub
+realtime/domain-events.ts     Row changes → named events, derived in one place
 routes/                       One router per resource
 ```
 
@@ -153,6 +154,30 @@ minute does not finish every task at once when it wakes.
 Idle agents pick work off the board on their own (`autoAssign`, on by default),
 which is the mock stand-in for Atlas delegating. A real engine would ask the
 project manager agent to make that call.
+
+#### Who owns what, when a run is live
+
+The two engines share the island, and the division is the whole integration:
+
+- **The simulation owns locomotion.** A live agent still walks to the Research
+  Library, still carries work to Headquarters, still hauls the crate to the
+  depot. Walking is presentation, and it is identical either way.
+- **The run owns everything else.** While a task is being executed for real, the
+  engine will not touch its progress and cannot finish it. That is one
+  predicate — `isLive(taskId)` — and without it the world would show progress
+  nobody earned and would raise an approval behind the model's back.
+
+`context.ts` ties the knot: the engine is built with `isLive` pointing at the
+execution service, which does not exist yet at that moment, so it reads through
+a `let`. It is the smaller of the two knots — the alternative is a live run
+having to reimplement walking.
+
+The same honesty runs through the rows themselves. A task records its
+`runMode`, set to `live` when a real agent takes it and back to `simulated`
+whenever the simulation takes it over, so the interface can say which kind of
+progress it is showing and still say it after a reload. And a live task is
+`queued` until the model call actually begins — the moment of "working" is
+reported by the runner, never assumed by the thing that started it.
 
 #### The real runtime, beside it
 
@@ -291,13 +316,37 @@ On connect the server sends a full `snapshot`; after that it sends deltas.
 
 ```
 snapshot   the whole world, once, on connect
-tick       bots and tasks that changed, plus fresh stats
+tick       agents and tasks that changed, plus fresh stats
 activity   new event-log rows
 approvals  the approval queue, when it changes
-islands    islands, when a crate count changes
+projects   projects, when one changes or a crate is delivered
+events     named domain events: what happened, not what is now true
 engine     engine started, stopped, or swapped
 heartbeat  keep-alive; also re-measures clock skew
 ```
+
+### Two kinds of message, on purpose
+
+Everything above except `events` carries **rows**: the state of record, which is
+what every screen renders. `events` carries **transitions** — `task.started`,
+`task.failed`, `approval.requested` and the rest — which is what you need in
+order to *react* rather than re-render: fetch a report the moment its task
+finishes, raise a toast when a live run fails, draw attention to a decision.
+
+They are derived, not emitted. Every change in the world — a simulated tick, a
+real agent's run, a button you pressed — reaches the browser through one
+`publish`, and `DomainEventDeriver` sits there comparing what changed against
+what it last saw. Deriving in that one place means an event cannot be forgotten
+at a call site, cannot contradict the row beside it, and does not care which
+engine produced the change. The cost is remembering the previous value of four
+fields, which is all that class is.
+
+Progress is reported by the whole percentage point rather than per tick: the
+simulation moves it twice a second per task, nothing downstream can act on a
+fraction, and the exact number is already on the wire in the same batch.
+
+`DOMAIN_EVENT_KINDS` carries the same compile-time exhaustiveness guard as
+`SERVER_EVENT_TYPES` below.
 
 ### One trap worth documenting
 

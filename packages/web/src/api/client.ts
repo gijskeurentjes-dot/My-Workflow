@@ -5,8 +5,10 @@ import {
   type ApprovalRequest,
   type Id,
   type Project,
+  type RuntimeInfo,
   type Task,
   type TaskPriority,
+  type TaskResult,
   type TaskType,
   type WorldSnapshot,
 } from '@ai-islands/shared';
@@ -123,6 +125,21 @@ export const api = {
     post<Agent>('/agents', { projectId, archetype, name }),
   updateAgent: (id: Id, input: UpdateAgentInput) => patch<Agent>(`/agents/${id}`, input),
   dismissAgent: (id: Id) => del<{ ok: true }>(`/agents/${id}`),
+
+  /**
+   * Hand this task to a real agent.
+   *
+   * Deliberately separate from `startTask`: one simulates the work, the other
+   * spends money doing it, and a single button that might do either would be a
+   * trap. Answers as soon as the run is accepted — everything after that
+   * arrives on the event stream.
+   */
+  runTask: (id: Id) => post<{ started: true; taskId: Id }>(`/tasks/${id}/run`),
+  /** Stop a live run. The task is left cancelled, with its history intact. */
+  stopTask: (id: Id) => post<{ stopped: true; taskId: Id }>(`/tasks/${id}/stop`),
+  /** Everything a task has produced, newest first. */
+  taskResults: (id: Id) => request<TaskResult[]>(`/tasks/${id}/results`),
+  runtime: () => request<RuntimeInfo>('/runtime'),
 
   approve: (id: Id) => post<ApprovalRequest>(`/approvals/${id}/approve`),
   reject: (id: Id, note?: string) => post<ApprovalRequest>(`/approvals/${id}/reject`, { note }),

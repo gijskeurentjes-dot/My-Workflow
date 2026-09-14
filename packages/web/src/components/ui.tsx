@@ -7,6 +7,7 @@ import {
   type ActivityEventType,
   type AgentArchetype,
   type AgentStatus,
+  type RuntimeInfo,
   type TaskStatus,
 } from '@ai-islands/shared';
 
@@ -164,18 +165,56 @@ export function ActivityFeed({
   );
 }
 
-/** The banner that says, plainly, that no AI model is being called. */
-export function SimulatedNotice({ compact = false }: { compact?: boolean }) {
-  if (compact) return <span className="simtag">Simulated</span>;
+/**
+ * Says plainly which of these agents are real.
+ *
+ * It used to say "everything here is simulated", which was true and is no
+ * longer: a Researcher can be run against a real model. Saying so precisely —
+ * which archetypes are live, and that the rest are not — is the whole point of
+ * the notice, so it takes the runtime rather than assuming.
+ */
+export function SimulatedNotice({
+  runtime,
+  compact = false,
+  live = false,
+}: {
+  runtime?: RuntimeInfo;
+  compact?: boolean;
+  /** True when the thing being labelled is itself a live run. */
+  live?: boolean;
+}) {
+  if (compact) {
+    return live ? (
+      <span className="live-tag">Live agent</span>
+    ) : (
+      <span className="simtag">Simulated</span>
+    );
+  }
+
+  const roles = (runtime?.archetypes ?? [])
+    .map((key) => ARCHETYPES[key as AgentArchetype]?.title ?? key)
+    .join(', ');
+
   return (
     <div className="banner">
       <span aria-hidden="true" style={{ fontSize: 14 }}>
         ℹ️
       </span>
-      <span>
-        Every agent here is <b>simulated</b>. Progress, walking, approvals and deliveries come from a
-        local state machine — no AI model is called and no real work is performed.
-      </span>
+      {runtime?.available ? (
+        <span>
+          <b>{roles}</b> can be run for real on {runtime.model} — use <b>Run for real</b> on a task.
+          Everyone else is <b>simulated</b>: their progress, walking and deliveries come from a local
+          state machine, and no model is called.
+        </span>
+      ) : (
+        <span>
+          Every agent here is <b>simulated</b>. Progress, walking, approvals and deliveries come from
+          a local state machine — no AI model is called and no real work is performed.
+          {runtime && !runtime.credentialsConfigured && (
+            <> Set <span className="mono">ANTHROPIC_API_KEY</span> to run the Researcher for real.</>
+          )}
+        </span>
+      )}
     </div>
   );
 }

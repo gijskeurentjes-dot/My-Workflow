@@ -164,11 +164,20 @@ Two things are worth knowing:
   execution, nothing that can send mail or spend money — and an agent may only
   run work belonging to the project it is on.
 
-Live execution is reachable from the command line and the API. It is
-deliberately **not** wired into the visual world yet: the backend is being
-proven on its own first.
+**The island shows what the backend is actually doing.** Press **Run for real**
+on a task and the agent walks to the Research Library, works while the model
+works, carries the finished report to Headquarters and waits for your decision;
+approve it and the crate goes to the depot. If the run fails you get the reason
+in plain words, the bot stays put, and **Run again** re-runs it.
 
-Setup, limits, the API, and what an agent may not do:
+The rule underneath all of it: **the world never shows an agent working unless
+the backend reports that it is working.** A task records whether its progress is
+`live` or `simulated`, so the interface can say which it is showing you — and
+the simulation will not advance a number a model is responsible for. **Run for
+real** and **Simulate** are separate buttons, and with no API key configured
+everything works exactly as it did before.
+
+Setup, the event contract, limits, and what an agent may not do:
 **[docs/AGENTS.md](docs/AGENTS.md)**.
 
 ---
@@ -280,11 +289,13 @@ The world runs, you can drive it, and one agent is real.
 - **A real research agent**: Claude with web search, structured reports, an
   honesty check on its sources, enforced tool and project limits, cancellation
   and recorded usage
-- 119 server tests, none of which touch the network
+- **The visual world driven by the real backend**: live runs walk the island,
+  show their report, and are never confused with simulated ones
+- A named event contract for status, progress, completion, failure and approvals
+- 137 server tests, none of which touch the network
 
 Still to come:
 
-- The real agents wired into the visual world
 - Live engines for the other four archetypes
 - Authentication, and more than one world
 - Retention on the activity log

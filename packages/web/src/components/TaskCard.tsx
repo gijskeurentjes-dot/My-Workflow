@@ -17,6 +17,7 @@ import {
 import { api } from '../api/client.js';
 import { useCommands } from '../world/CommandProvider.js';
 import { toTaskDisplay } from '../world/selectors.js';
+import { TaskResultPanel } from './TaskResult.js';
 import { Avatar, ProgressBar, StatusPill, timeAgo } from './ui.js';
 
 /**
@@ -49,22 +50,49 @@ export function TaskCard({
   const [changingPriority, setChangingPriority] = useState(false);
 
   const key = (action: string) => `${action}:${task.id}`;
-  const busy = ['start', 'pause', 'cancel', 'retry', 'reset', 'assign', 'delete', 'priority'].some(
-    (a) => isPending(key(a)),
-  );
+  const busy = [
+    'start',
+    'run',
+    'pause',
+    'cancel',
+    'retry',
+    'reset',
+    'assign',
+    'delete',
+    'priority',
+  ].some((a) => isPending(key(a)));
 
   const approval = world.approvals.find((a) => a.taskId === task.id && a.status === 'pending');
 
+  const live = task.runMode === 'live';
+  // A live run is a real agent doing real work: it is offered only when the
+  // server says it could actually happen, for an agent that has an engine.
+  const canRunForReal =
+    world.runtime.available &&
+    d.agent !== null &&
+    world.runtime.archetypes.includes(d.agent.archetype) &&
+    (task.status === 'backlog' || task.status === 'paused' || task.status === 'failed');
+  const running = task.status === 'working' || task.status === 'queued';
+
   const canStart = task.status === 'backlog' || task.status === 'paused';
-  const canPause = task.status === 'working';
-  const canRetry = task.status === 'failed';
+  // A model call cannot be suspended and picked up later, so pause is not
+  // offered for one — the server refuses it too.
+  const canPause = task.status === 'working' && !live;
+  const canRetry = task.status === 'failed' && !canRunForReal;
   const canCancel = !isTerminalTaskStatus(task.status);
   const canReset = task.status === 'cancelled' || task.status === 'completed';
   const showProgress =
-    task.status === 'working' ||
+    running ||
     task.status === 'paused' ||
     task.status === 'failed' ||
     task.status === 'cancelled';
+  // The result of a real run is worth reading wherever the task appears.
+  const showResult =
+    live &&
+    (task.status === 'waiting_approval' ||
+      task.status === 'completed' ||
+      task.status === 'delivering' ||
+      task.status === 'failed');
 
   const progressTone =
     task.status === 'failed'
@@ -92,6 +120,15 @@ export function TaskCard({
 
       <div className="tags">
         {showStatus && <StatusPill status={task.status} />}
+        {live && (
+          <span
+            className="pill tone-violet"
+            title={`This work is being done by a real agent on ${world.runtime.model}.`}
+          >
+            <i aria-hidden="true" />
+            live agent
+          </span>
+        )}
         {task.priority !== 'normal' && (
           <span className={`pill tone-${PRIORITY_TONE[task.priority]}`}>
             <i aria-hidden="true" />
@@ -146,12 +183,25 @@ export function TaskCard({
                 ? 'blocked'
                 : task.status === 'cancelled'
                   ? 'cancelled — progress kept for the record'
-                  : 'simulated progress'
+                  : live
+                    ? // Never "n% done": nothing knows how much of a research
+                      // run is left. This counts what has actually happened.
+                      'live run — milestones reached'
+                    : 'simulated progress'
           }
         />
       )}
 
       {/* Work waiting on a decision is decided here, not only in the queue. */}
+      {approval && (
+        <div className="approval-ask">
+          <span className="eyebrow">Waiting for your decision</span>
+          <p>{approval.summary}</p>
+        </div>
+      )}
+
+      {showResult && <TaskResultPanel taskId={task.id} now={now} />}
+
       {approval && (
         <div className="acts" style={{ marginTop: 10 }}>
           <button
@@ -180,13 +230,30 @@ export function TaskCard({
       )}
 
       <div className="acts">
-        {canStart && (
+        {canRunForReal && (
           <button
             className="btn btn-sm btn-primary"
             disabled={busy}
+            title={`${d.agent?.name} will do this for real on ${world.runtime.model}.`}
+            onClick={() =>
+              run(key('run'), () => api.runTask(task.id), `${d.agent?.name ?? 'The agent'} is on it`)
+            }
+          >
+            ✦ {task.status === 'failed' ? 'Run again' : 'Run for real'}
+          </button>
+        )}
+        {canStart && (
+          <button
+            className={`btn btn-sm${canRunForReal ? '' : ' btn-primary'}`}
+            disabled={busy}
+            title={
+              canRunForReal
+                ? 'Simulate this work instead of calling a model.'
+                : undefined
+            }
             onClick={() => run(key('start'), () => api.startTask(task.id))}
           >
-            ▶ {task.status === 'paused' ? 'Resume' : 'Start'}
+            ▶ {task.status === 'paused' ? 'Resume' : canRunForReal ? 'Simulate' : 'Start'}
           </button>
         )}
         {canPause && (
@@ -211,9 +278,10 @@ export function TaskCard({
           <button
             className="btn btn-sm btn-bad"
             disabled={busy}
+            title={live && running ? 'Stops the agent mid-run.' : undefined}
             onClick={() => run(key('cancel'), () => api.cancelTask(task.id), 'Cancelled')}
           >
-            ⏹ Cancel
+            ⏹ {live && running ? 'Stop the run' : 'Cancel'}
           </button>
         )}
         {canReset && (

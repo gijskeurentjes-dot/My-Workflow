@@ -285,6 +285,7 @@ export class WorkflowService {
         // optional — it is what makes the island legible.
         buildingKey: TASK_TYPES[input.type].building,
         progress: 0,
+        runMode: 'simulated',
         // A spread of durations so a board of new tasks does not finish in lockstep.
         durationSeconds: 100 + Math.round(Math.random() * 70),
         needsApproval: input.needsApproval !== false,
@@ -498,6 +499,9 @@ export class WorkflowService {
         this.repos.tasks.update(taskId, {
           status: 'backlog',
           progress: 0,
+          // Back on the board is back to the simulation until someone runs it
+          // for real again: the row always says how *this* attempt is produced.
+          runMode: 'simulated',
           assignedAgentId: null,
           blocker: null,
           startedAt: null,
@@ -522,7 +526,11 @@ export class WorkflowService {
       const changes = new ChangeSet();
       const agent = this.repos.agents.findById(task.assignedAgentId!);
 
-      changes.task(this.repos.tasks.update(taskId, { status: 'working', blocker: null }));
+      // A retry from the board is a simulated attempt; retrying a live run is
+      // done by running it again, which sets the mode back itself.
+      changes.task(
+        this.repos.tasks.update(taskId, { status: 'working', runMode: 'simulated', blocker: null }),
+      );
       if (agent) changes.agent(this.repos.agents.update(agent.id, { status: 'working' }));
 
       this.log(changes, 'retried', `“${task.title}” was retried after the blocker was cleared`, {
@@ -796,6 +804,9 @@ export class WorkflowService {
     changes.task(
       this.repos.tasks.update(taskId, {
         status: 'working',
+        // Start is the simulation. Running this task for real is its own
+        // command, and it is what sets the row back to live.
+        runMode: 'simulated',
         blocker: null,
         ...(task.startedAt === null ? { startedAt: now } : {}),
       }),

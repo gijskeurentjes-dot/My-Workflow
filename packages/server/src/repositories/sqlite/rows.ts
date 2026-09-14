@@ -128,6 +128,7 @@ export interface TaskRow {
   needs_approval: number;
   blocker: string | null;
   created_at: number;
+  run_mode: string;
   updated_at: number;
   started_at: number | null;
   completed_at: number | null;
@@ -144,6 +145,7 @@ export const toTask = (r: TaskRow): Task => ({
   priority: r.priority as TaskPriority,
   buildingKey: r.building_key as PlotKey,
   progress: r.progress,
+  runMode: r.run_mode === 'live' ? 'live' : 'simulated',
   durationSeconds: r.duration_seconds,
   needsApproval: r.needs_approval === 1,
   blocker: r.blocker,

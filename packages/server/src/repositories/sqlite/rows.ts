@@ -1,5 +1,6 @@
 import type {
   ActivityEvent,
+  TaskPriority,
   ApprovalRequest,
   Bot,
   BotKey,
@@ -48,6 +49,9 @@ export interface BotRow {
   key: string;
   name: string;
   island_id: string;
+  role: string;
+  instructions: string;
+  tools: string;
   status: string;
   task_id: string | null;
   location_key: string;
@@ -59,11 +63,24 @@ export interface BotRow {
   updated_at: number;
 }
 
+/** Tools are stored as a JSON array; a corrupt value must not break a read. */
+function parseTools(raw: string): string[] {
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed.filter((t): t is string => typeof t === 'string') : [];
+  } catch {
+    return [];
+  }
+}
+
 export const toBot = (r: BotRow): Bot => ({
   id: r.id,
   key: r.key as BotKey,
   name: r.name,
   islandId: r.island_id,
+  role: r.role,
+  instructions: r.instructions,
+  tools: parseTools(r.tools),
   status: r.status as Bot['status'],
   taskId: r.task_id,
   locationKey: r.location_key as PlotKey,
@@ -108,6 +125,7 @@ export interface TaskRow {
   notes: string;
   type: string;
   status: string;
+  priority: string;
   island_id: string;
   bot_id: string | null;
   progress: number;
@@ -115,6 +133,7 @@ export interface TaskRow {
   needs_approval: number;
   blocker: string | null;
   created_at: number;
+  updated_at: number;
   started_at: number | null;
   completed_at: number | null;
 }
@@ -126,6 +145,7 @@ export const toTask = (r: TaskRow): Task => ({
   notes: r.notes,
   type: r.type as Task['type'],
   status: r.status as Task['status'],
+  priority: r.priority as TaskPriority,
   islandId: r.island_id,
   botId: r.bot_id,
   progress: r.progress,
@@ -133,6 +153,7 @@ export const toTask = (r: TaskRow): Task => ({
   needsApproval: r.needs_approval === 1,
   blocker: r.blocker,
   createdAt: r.created_at,
+  updatedAt: r.updated_at,
   startedAt: r.started_at,
   completedAt: r.completed_at,
 });

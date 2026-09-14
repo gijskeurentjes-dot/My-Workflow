@@ -6,12 +6,12 @@ import { toTask, type TaskRow } from './rows.js';
 export function createTaskRepository(db: Db): TaskRepository {
   const selectById = db.prepare('SELECT * FROM tasks WHERE id = ?');
   const insert = db.prepare(`
-    INSERT INTO tasks (id, project_id, title, notes, type, status, island_id, bot_id,
+    INSERT INTO tasks (id, project_id, title, notes, type, status, priority, island_id, bot_id,
                        progress, duration_seconds, needs_approval, blocker,
-                       created_at, started_at, completed_at)
-    VALUES (@id, @project_id, @title, @notes, @type, @status, @island_id, @bot_id,
+                       created_at, updated_at, started_at, completed_at)
+    VALUES (@id, @project_id, @title, @notes, @type, @status, @priority, @island_id, @bot_id,
             @progress, @duration_seconds, @needs_approval, @blocker,
-            @created_at, @started_at, @completed_at)
+            @created_at, @updated_at, @started_at, @completed_at)
   `);
   const remove = db.prepare('DELETE FROM tasks WHERE id = ?');
 
@@ -22,6 +22,17 @@ export function createTaskRepository(db: Db): TaskRepository {
     WHERE status IN (${ACTIVE_TASK_STATUSES.map(() => '?').join(', ')})
     ORDER BY created_at
   `);
+
+  // Urgent first, then oldest. Used everywhere a list of tasks is shown or
+  // picked from, so the board and the pickup order never disagree.
+  const PRIORITY_ORDER = `
+    CASE priority
+      WHEN 'urgent' THEN 0
+      WHEN 'high'   THEN 1
+      WHEN 'normal' THEN 2
+      ELSE 3
+    END, created_at
+  `;
 
   const read = (id: Id): Task | null => {
     const row = selectById.get(id) as TaskRow | undefined;
@@ -49,13 +60,17 @@ export function createTaskRepository(db: Db): TaskRepository {
         where.push('type = ?');
         params.push(filter.type);
       }
+      if (filter.priority) {
+        where.push('priority = ?');
+        params.push(filter.priority);
+      }
       if (filter.status) {
         const statuses = Array.isArray(filter.status) ? filter.status : [filter.status];
         where.push(`status IN (${statuses.map(() => '?').join(', ')})`);
         params.push(...statuses);
       }
 
-      const sql = `SELECT * FROM tasks${where.length ? ` WHERE ${where.join(' AND ')}` : ''} ORDER BY created_at`;
+      const sql = `SELECT * FROM tasks${where.length ? ` WHERE ${where.join(' AND ')}` : ''} ORDER BY ${PRIORITY_ORDER}`;
       return (db.prepare(sql).all(...params) as TaskRow[]).map(toTask);
     },
 
@@ -69,6 +84,7 @@ export function createTaskRepository(db: Db): TaskRepository {
         notes: task.notes,
         type: task.type,
         status: task.status,
+        priority: task.priority,
         island_id: task.islandId,
         bot_id: task.botId,
         progress: task.progress,
@@ -76,6 +92,7 @@ export function createTaskRepository(db: Db): TaskRepository {
         needs_approval: task.needsApproval ? 1 : 0,
         blocker: task.blocker,
         created_at: task.createdAt,
+        updated_at: task.updatedAt,
         started_at: task.startedAt,
         completed_at: task.completedAt,
       });
@@ -87,6 +104,7 @@ export function createTaskRepository(db: Db): TaskRepository {
         title: 'title',
         notes: 'notes',
         status: 'status',
+        priority: 'priority',
         botId: 'bot_id',
         progress: 'progress',
         needsApproval: 'needs_approval',
@@ -106,6 +124,10 @@ export function createTaskRepository(db: Db): TaskRepository {
       }
 
       if (sets.length === 0) return read(id);
+
+      sets.push('updated_at = @updated_at');
+      params.updated_at = Date.now();
+
       db.prepare(`UPDATE tasks SET ${sets.join(', ')} WHERE id = @id`).run(params);
       return read(id);
     },

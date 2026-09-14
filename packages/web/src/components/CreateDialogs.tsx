@@ -1,12 +1,15 @@
 import { useState } from 'react';
 import {
   BOT_PROFILES,
+  PRIORITY_LABEL,
+  TASK_PRIORITIES,
   TASK_TYPES,
   TASK_TYPE_KEYS,
   defaultBotForTaskType,
   type Bot,
   type Island,
   type Project,
+  type TaskPriority,
   type TaskType,
 } from '@ai-islands/shared';
 import { api } from '../api/client.js';
@@ -131,6 +134,7 @@ export function NewTaskDialog({
   const [title, setTitle] = useState('');
   const [notes, setNotes] = useState('');
   const [type, setType] = useState<TaskType>('planning');
+  const [priority, setPriority] = useState<TaskPriority>('normal');
   const [needsApproval, setNeedsApproval] = useState(true);
   const [assignNow, setAssignNow] = useState(true);
   const [startNow, setStartNow] = useState(false);
@@ -152,6 +156,7 @@ export function NewTaskDialog({
           title: title.trim(),
           notes: notes.trim(),
           type,
+          priority,
           needsApproval,
           botId: assignNow ? (preferredBot?.id ?? null) : null,
           autoStart: assignNow && startNow,
@@ -260,6 +265,23 @@ export function NewTaskDialog({
                 </button>
               );
             })}
+          </div>
+        </Field>
+
+        <Field label="Priority" hint="Urgent work is picked up before anything else.">
+          <div className="row" role="radiogroup" aria-label="Priority">
+            {TASK_PRIORITIES.map((p) => (
+              <button
+                key={p}
+                type="button"
+                role="radio"
+                aria-checked={priority === p}
+                className={`btn btn-sm${priority === p ? ' btn-primary' : ''}`}
+                onClick={() => setPriority(p)}
+              >
+                {PRIORITY_LABEL[p]}
+              </button>
+            ))}
           </div>
         </Field>
 

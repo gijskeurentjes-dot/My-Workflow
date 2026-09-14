@@ -10,6 +10,7 @@ import {
   type Id,
   type Project,
   type Task,
+  type TaskPriority,
   type TaskType,
 } from '@ai-islands/shared';
 import { invalid, notFound, refuse } from '../errors.js';
@@ -126,6 +127,7 @@ export class WorkflowService {
     title: string;
     notes?: string;
     type: TaskType;
+    priority?: TaskPriority;
     needsApproval?: boolean;
     /** Assign and start immediately, rather than leaving it on the board. */
     botId?: Id | null;
@@ -153,6 +155,7 @@ export class WorkflowService {
         notes: input.notes?.trim() ?? '',
         type: input.type,
         status: 'backlog',
+        priority: input.priority ?? 'normal',
         islandId: island.id,
         botId: null,
         progress: 0,
@@ -161,6 +164,7 @@ export class WorkflowService {
         needsApproval: input.needsApproval !== false,
         blocker: null,
         createdAt: now,
+        updatedAt: now,
         startedAt: null,
         completedAt: null,
       });
@@ -181,7 +185,7 @@ export class WorkflowService {
 
   updateTask(
     id: Id,
-    patch: { title?: string; notes?: string; needsApproval?: boolean },
+    patch: { title?: string; notes?: string; needsApproval?: boolean; priority?: TaskPriority },
   ): { task: Task; changes: EngineChanges } {
     const task = this.requireTask(id);
     if (patch.title !== undefined && !patch.title.trim()) {
@@ -212,10 +216,20 @@ export class WorkflowService {
         );
       }
 
+      if (patch.priority !== undefined && patch.priority !== task.priority) {
+        this.log(
+          changes,
+          'system',
+          `“${task.title}” was moved to ${patch.priority} priority`,
+          { task, at: Date.now() },
+        );
+      }
+
       const updated = this.repos.tasks.update(id, {
         ...(patch.title !== undefined ? { title: patch.title.trim() } : {}),
         ...(patch.notes !== undefined ? { notes: patch.notes.trim() } : {}),
         ...(patch.needsApproval !== undefined ? { needsApproval: patch.needsApproval } : {}),
+        ...(patch.priority !== undefined ? { priority: patch.priority } : {}),
       });
       if (!updated) throw notFound('Task');
 
@@ -238,6 +252,60 @@ export class WorkflowService {
         at: Date.now(),
       });
       return changes.build();
+    });
+  }
+
+  // ── Agents ────────────────────────────────────────────────────────────────
+
+  /**
+   * Edit an agent's brief.
+   *
+   * `instructions` is what a real engine sends as this agent's system prompt
+   * and `tools` is what it may reach for, so this is the screen where you shape
+   * an agent's behaviour. Storing it rather than hardcoding it is what lets the
+   * brief change without a deploy.
+   */
+  updateBot(
+    id: Id,
+    patch: { name?: string; role?: string; instructions?: string; tools?: string[] },
+  ): { bot: Bot; changes: EngineChanges } {
+    const existing = this.repos.bots.findById(id);
+    if (!existing) throw notFound('Agent');
+    if (patch.name !== undefined && !patch.name.trim()) throw invalid('An agent needs a name.');
+
+    return this.repos.transaction(() => {
+      const bot = this.repos.bots.update(id, {
+        ...(patch.name !== undefined ? { name: patch.name.trim() } : {}),
+        ...(patch.role !== undefined ? { role: patch.role.trim() } : {}),
+        ...(patch.instructions !== undefined ? { instructions: patch.instructions.trim() } : {}),
+        ...(patch.tools !== undefined
+          ? { tools: patch.tools.map((t) => t.trim()).filter(Boolean) }
+          : {}),
+      });
+      if (!bot) throw notFound('Agent');
+
+      const changes = new ChangeSet();
+      changes.bot(bot);
+
+      // Say what changed rather than "was updated" — the brief is the thing
+      // that decides how this agent behaves once a real engine is behind it.
+      const edited = [
+        patch.name !== undefined && patch.name.trim() !== existing.name ? 'name' : null,
+        patch.role !== undefined && patch.role.trim() !== existing.role ? 'role' : null,
+        patch.instructions !== undefined && patch.instructions.trim() !== existing.instructions
+          ? 'instructions'
+          : null,
+        patch.tools !== undefined ? 'tools' : null,
+      ].filter((x): x is string => x !== null);
+
+      if (edited.length > 0) {
+        this.log(changes, 'system', `${bot.name}’s ${edited.join(' and ')} ${edited.length > 1 ? 'were' : 'was'} updated`, {
+          bot,
+          at: Date.now(),
+        });
+      }
+
+      return { bot, changes: changes.build() };
     });
   }
 

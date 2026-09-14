@@ -10,6 +10,7 @@ import {
   type IslandKey,
   type Project,
   type Task,
+  type TaskPriority,
   type TaskType,
 } from '@ai-islands/shared';
 import { newId } from '../ids.js';
@@ -33,6 +34,7 @@ interface SeedTask {
   notes: string;
   type: TaskType;
   status: Task['status'];
+  priority?: TaskPriority;
   bot: BotKey | null;
   progress?: number;
   durationSeconds?: number;
@@ -72,6 +74,7 @@ const SEED_TASKS: SeedTask[] = [
     notes: 'Sequence the pricing page, the deck and the revenue model.',
     type: 'planning',
     status: 'working',
+    priority: 'high',
     bot: 'atlas',
     progress: 44,
     durationSeconds: 150,
@@ -83,6 +86,7 @@ const SEED_TASKS: SeedTask[] = [
     notes: 'Base, upside and downside cases with the assumptions labelled.',
     type: 'analysis',
     status: 'working',
+    priority: 'normal',
     bot: 'excel-expert',
     progress: 27,
     durationSeconds: 135,
@@ -96,6 +100,7 @@ const SEED_TASKS: SeedTask[] = [
     notes: 'Pricing tiers, positioning and recent launches for the top three.',
     type: 'research',
     status: 'waiting_approval',
+    priority: 'high',
     bot: 'nova',
     progress: 100,
     durationSeconds: 120,
@@ -109,6 +114,7 @@ const SEED_TASKS: SeedTask[] = [
     notes: 'Card payments fail on the annual plan after the pricing change.',
     type: 'coding',
     status: 'failed',
+    priority: 'urgent',
     bot: 'forge',
     progress: 38,
     durationSeconds: 130,
@@ -123,6 +129,7 @@ const SEED_TASKS: SeedTask[] = [
     notes: 'Twelve slides, speaker notes, one chart per claim.',
     type: 'writing',
     status: 'paused',
+    priority: 'normal',
     bot: 'slidebuilder',
     progress: 61,
     durationSeconds: 140,
@@ -136,6 +143,7 @@ const SEED_TASKS: SeedTask[] = [
     notes: 'Three tiers, annual toggle, and the comparison table.',
     type: 'coding',
     status: 'backlog',
+    priority: 'urgent',
     bot: null,
   },
   {
@@ -145,6 +153,7 @@ const SEED_TASKS: SeedTask[] = [
     notes: 'Nine transcripts. Pull the themes and the direct quotes.',
     type: 'research',
     status: 'backlog',
+    priority: 'normal',
     bot: null,
   },
   {
@@ -154,6 +163,7 @@ const SEED_TASKS: SeedTask[] = [
     notes: 'One slide per cost centre with the variance called out.',
     type: 'writing',
     status: 'backlog',
+    priority: 'low',
     bot: null,
   },
   {
@@ -163,6 +173,7 @@ const SEED_TASKS: SeedTask[] = [
     notes: 'Everything that has to be true before we announce.',
     type: 'review',
     status: 'backlog',
+    priority: 'high',
     bot: null,
   },
 
@@ -274,6 +285,18 @@ export function seedWorld(repos: Repositories, now: number = Date.now()): SeedRe
         key: profile.key,
         name: profile.name,
         islandId: island.id,
+        role: profile.title,
+        // The brief a real engine would send as this agent's system prompt.
+        instructions: [
+          profile.tagline,
+          '',
+          'Responsibilities:',
+          ...profile.responsibilities.map((r) => `- ${r}`),
+          '',
+          'Always check with the user before:',
+          ...profile.approvalRules.map((r) => `- ${r}`),
+        ].join('\n'),
+        tools: [...profile.tools],
         status,
         taskId: null, // linked below, once the tasks exist
         locationKey: plotForStatus(status),
@@ -304,6 +327,7 @@ export function seedWorld(repos: Repositories, now: number = Date.now()): SeedRe
         notes: t.notes,
         type: t.type,
         status: t.status,
+        priority: t.priority ?? 'normal',
         islandId: island.id,
         botId: bot?.id ?? null,
         progress,
@@ -311,6 +335,7 @@ export function seedWorld(repos: Repositories, now: number = Date.now()): SeedRe
         needsApproval: t.needsApproval ?? true,
         blocker: t.blocker ?? null,
         createdAt: now - 3 * HOUR,
+        updatedAt: now,
         startedAt: started,
         completedAt: t.completedAgo ? now - t.completedAgo : null,
       });

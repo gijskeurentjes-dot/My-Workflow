@@ -74,6 +74,15 @@ export interface Bot {
   key: BotKey;
   name: string;
   islandId: Id;
+  /**
+   * What this agent is for. Seeded from its profile, then editable — so a real
+   * engine reads the agent's brief from the database rather than from code.
+   */
+  role: string;
+  /** The brief a real engine would send as this agent's system prompt. */
+  instructions: string;
+  /** What this agent is allowed to reach for. */
+  tools: string[];
   status: BotStatus;
   /** The task currently held, if any. */
   taskId: Id | null;
@@ -123,6 +132,38 @@ export interface Project {
   updatedAt: Timestamp;
 }
 
+/**
+ * How urgent a task is.
+ *
+ * Priority is not decoration: it orders the board, and it decides which waiting
+ * task an idle agent picks up first.
+ */
+export const TASK_PRIORITIES = ['low', 'normal', 'high', 'urgent'] as const;
+
+export type TaskPriority = (typeof TASK_PRIORITIES)[number];
+
+export const PRIORITY_LABEL: Record<TaskPriority, string> = {
+  low: 'Low',
+  normal: 'Normal',
+  high: 'High',
+  urgent: 'Urgent',
+};
+
+/** Higher sorts first. */
+export const PRIORITY_RANK: Record<TaskPriority, number> = {
+  urgent: 3,
+  high: 2,
+  normal: 1,
+  low: 0,
+};
+
+export const PRIORITY_TONE: Record<TaskPriority, string> = {
+  urgent: 'bad',
+  high: 'warn',
+  normal: 'mute',
+  low: 'mute',
+};
+
 /** Task type decides which island the work physically happens on. */
 export type TaskType = 'planning' | 'research' | 'coding' | 'writing' | 'analysis' | 'review';
 
@@ -143,6 +184,8 @@ export interface Task {
   notes: string;
   type: TaskType;
   status: TaskStatus;
+  /** Orders the board, and decides what gets picked up first. */
+  priority: TaskPriority;
   /** Which island the work happens on — derived from `type` at creation. */
   islandId: Id;
   /** The bot holding this task, or null while it sits on the board. */
@@ -156,6 +199,8 @@ export interface Task {
   /** Set when the task fails: why it stopped and what you need to decide. */
   blocker: string | null;
   createdAt: Timestamp;
+  /** Last time anything about this task changed. */
+  updatedAt: Timestamp;
   startedAt: Timestamp | null;
   completedAt: Timestamp | null;
 }

@@ -8,6 +8,7 @@ import {
   SimulatedNotice,
   StatusPill,
 } from '../components/ui.js';
+import { AgentBrief } from '../components/AgentBrief.js';
 import { TaskCard } from '../components/TaskCard.js';
 import { useWorld } from '../world/WorldProvider.js';
 import { useAnimationClock, useSlowClock } from '../world/useAnimationClock.js';
@@ -54,7 +55,7 @@ export function BotDetail() {
           <div style={{ flex: 1, minWidth: 0 }}>
             <h1 style={{ fontSize: 22 }}>{bot.name}</h1>
             <p style={{ margin: '2px 0 0', color: 'var(--ink-3)', fontWeight: 600, fontSize: 13 }}>
-              {profile.title}
+              {bot.role || profile.title}
             </p>
           </div>
           <StatusPill status={bot.status} />
@@ -134,41 +135,7 @@ export function BotDetail() {
             </div>
           )}
 
-          <div className="card">
-            <h4>Responsibilities</h4>
-            <ul style={{ margin: 0, paddingLeft: 18 }}>
-              {profile.responsibilities.map((r) => (
-                <li key={r} className="muted" style={{ marginBottom: 5 }}>
-                  {r}
-                </li>
-              ))}
-            </ul>
-          </div>
-
-          <div className="card">
-            <h4>Tools</h4>
-            <div className="tags" style={{ marginTop: 0 }}>
-              {profile.tools.map((t) => (
-                <span className="tag" key={t}>
-                  {t}
-                </span>
-              ))}
-            </div>
-          </div>
-
-          <div className="card">
-            <h4>Approval rules</h4>
-            <p className="muted" style={{ marginBottom: 8 }}>
-              What this agent will always check with you about.
-            </p>
-            <ul style={{ margin: 0, paddingLeft: 18 }}>
-              {profile.approvalRules.map((r) => (
-                <li key={r} className="muted" style={{ marginBottom: 5 }}>
-                  {r}
-                </li>
-              ))}
-            </ul>
-          </div>
+          <AgentBrief bot={bot} />
         </div>
 
         <div>

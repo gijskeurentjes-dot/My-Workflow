@@ -2,11 +2,15 @@ import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
   BOT_PROFILES,
+  PRIORITY_LABEL,
+  PRIORITY_TONE,
+  TASK_PRIORITIES,
   TASK_TYPES,
   defaultBotForTaskType,
   isTerminalTaskStatus,
   type Bot,
   type Task,
+  type TaskPriority,
   type WorldSnapshot,
 } from '@ai-islands/shared';
 import { api } from '../api/client.js';
@@ -43,10 +47,11 @@ export function TaskCard({
   const { run, isPending } = useCommands();
   const [assigning, setAssigning] = useState(false);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const [changingPriority, setChangingPriority] = useState(false);
 
   const key = (action: string) => `${action}:${task.id}`;
-  const busy = ['start', 'pause', 'cancel', 'retry', 'reset', 'assign', 'delete'].some((a) =>
-    isPending(key(a)),
+  const busy = ['start', 'pause', 'cancel', 'retry', 'reset', 'assign', 'delete', 'priority'].some(
+    (a) => isPending(key(a)),
   );
 
   const approval = world.approvals.find((a) => a.taskId === task.id && a.status === 'pending');
@@ -86,6 +91,12 @@ export function TaskCard({
 
       <div className="tags">
         {showStatus && <StatusPill status={task.status} />}
+        {(task.priority !== 'normal' || changingPriority) && (
+          <span className={`pill tone-${PRIORITY_TONE[task.priority]}`}>
+            <i aria-hidden="true" />
+            {PRIORITY_LABEL[task.priority]}
+          </span>
+        )}
         {showProject && d.project && (
           <Link to={`/projects/${d.project.id}`} className="tag" style={{ textDecoration: 'none' }}>
             <span
@@ -211,6 +222,37 @@ export function TaskCard({
             {d.bot ? 'Reassign' : 'Assign'}
           </button>
         )}
+        {!isTerminalTaskStatus(task.status) &&
+          (changingPriority ? (
+            <select
+              className="btn btn-sm"
+              aria-label={`Priority for ${task.title}`}
+              value={task.priority}
+              disabled={busy}
+              autoFocus
+              onBlur={() => setChangingPriority(false)}
+              onChange={async (e) => {
+                const next = e.target.value as TaskPriority;
+                await run(key('priority'), () => api.updateTask(task.id, { priority: next }));
+                setChangingPriority(false);
+              }}
+            >
+              {TASK_PRIORITIES.map((p) => (
+                <option key={p} value={p}>
+                  {PRIORITY_LABEL[p]}
+                </option>
+              ))}
+            </select>
+          ) : (
+            <button
+              className="btn btn-sm"
+              disabled={busy}
+              onClick={() => setChangingPriority(true)}
+              title="Priority decides what an idle agent picks up first"
+            >
+              Priority
+            </button>
+          ))}
 
         {!confirmingDelete ? (
           <button

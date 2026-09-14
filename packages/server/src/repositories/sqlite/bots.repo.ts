@@ -9,9 +9,11 @@ export function createBotRepository(db: Db): BotRepository {
   const selectByKey = db.prepare('SELECT * FROM bots WHERE key = ?');
   const selectByIsland = db.prepare('SELECT * FROM bots WHERE island_id = ? ORDER BY name');
   const insert = db.prepare(`
-    INSERT INTO bots (id, key, name, island_id, status, task_id, location_key,
+    INSERT INTO bots (id, key, name, island_id, role, instructions, tools,
+                      status, task_id, location_key,
                       move_from, move_to, move_departed, move_arrives, progress, updated_at)
-    VALUES (@id, @key, @name, @island_id, @status, @task_id, @location_key,
+    VALUES (@id, @key, @name, @island_id, @role, @instructions, @tools,
+            @status, @task_id, @location_key,
             @move_from, @move_to, @move_departed, @move_arrives, @progress, @updated_at)
   `);
 
@@ -37,6 +39,9 @@ export function createBotRepository(db: Db): BotRepository {
         key: bot.key,
         name: bot.name,
         island_id: bot.islandId,
+        role: bot.role,
+        instructions: bot.instructions,
+        tools: JSON.stringify(bot.tools),
         status: bot.status,
         task_id: bot.taskId,
         location_key: bot.locationKey,
@@ -89,6 +94,18 @@ export function createBotRepository(db: Db): BotRepository {
       if (patch.progress !== undefined) {
         sets.push('progress = @progress');
         params.progress = patch.progress;
+      }
+      if (patch.role !== undefined) {
+        sets.push('role = @role');
+        params.role = patch.role;
+      }
+      if (patch.instructions !== undefined) {
+        sets.push('instructions = @instructions');
+        params.instructions = patch.instructions;
+      }
+      if (patch.tools !== undefined) {
+        sets.push('tools = @tools');
+        params.tools = JSON.stringify(patch.tools);
       }
 
       if (sets.length === 0) return read(id);

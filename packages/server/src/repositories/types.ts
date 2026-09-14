@@ -11,6 +11,7 @@ import type {
   Project,
   ProjectStatus,
   Task,
+  TaskPriority,
   TaskStatus,
   TaskType,
 } from '@ai-islands/shared';
@@ -53,6 +54,12 @@ export interface BotPatch {
   locationKey?: Bot['locationKey'];
   movement?: Bot['movement'];
   progress?: number;
+  /** What this agent is for. */
+  role?: string;
+  /** The brief a real engine would send as its system prompt. */
+  instructions?: string;
+  /** What it is allowed to reach for. */
+  tools?: string[];
   /**
    * When this change happened. The agent engine passes its own tick time so
    * that durations it measures against `updatedAt` — how long a bot has been
@@ -76,6 +83,7 @@ export interface TaskFilter {
   botId?: Id;
   status?: TaskStatus | TaskStatus[];
   type?: TaskType;
+  priority?: TaskPriority;
 }
 
 export interface TaskRepository {
@@ -92,6 +100,7 @@ export interface TaskPatch {
   title?: string;
   notes?: string;
   status?: TaskStatus;
+  priority?: TaskPriority;
   botId?: Id | null;
   progress?: number;
   needsApproval?: boolean;

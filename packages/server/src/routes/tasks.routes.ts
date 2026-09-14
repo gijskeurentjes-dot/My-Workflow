@@ -1,6 +1,13 @@
 import { Router } from 'express';
 import { z } from 'zod';
-import { TASK_STATUSES, TASK_TYPE_KEYS, type TaskStatus, type TaskType } from '@ai-islands/shared';
+import {
+  TASK_PRIORITIES,
+  TASK_STATUSES,
+  TASK_TYPE_KEYS,
+  type TaskPriority,
+  type TaskStatus,
+  type TaskType,
+} from '@ai-islands/shared';
 import type { AppContext } from '../context.js';
 import { command, parseBody } from './helpers.js';
 
@@ -10,6 +17,7 @@ const listQuery = z.object({
   botId: z.string().optional(),
   status: z.enum(TASK_STATUSES).optional(),
   type: z.enum(TASK_TYPE_KEYS as [TaskType, ...TaskType[]]).optional(),
+  priority: z.enum(TASK_PRIORITIES).optional(),
 });
 
 const createBody = z.object({
@@ -17,6 +25,7 @@ const createBody = z.object({
   title: z.string().min(1, 'A task needs a title').max(160),
   notes: z.string().max(1000).optional(),
   type: z.enum(TASK_TYPE_KEYS as [TaskType, ...TaskType[]]),
+  priority: z.enum(TASK_PRIORITIES).optional(),
   needsApproval: z.boolean().optional(),
   botId: z.string().nullable().optional(),
   /** Assign and start in one step, instead of leaving it on the board. */
@@ -28,6 +37,7 @@ const updateBody = z
     title: z.string().min(1).max(160).optional(),
     notes: z.string().max(1000).optional(),
     needsApproval: z.boolean().optional(),
+    priority: z.enum(TASK_PRIORITIES).optional(),
   })
   .refine((v) => Object.keys(v).length > 0, { message: 'Nothing to update' });
 
@@ -44,9 +54,13 @@ export function createTasksRouter(ctx: AppContext): Router {
       res.status(400).json({ error: 'Invalid query', details: parsed.error.flatten() });
       return;
     }
-    const { status, ...rest } = parsed.data;
+    const { status, priority, ...rest } = parsed.data;
     res.json(
-      ctx.world.listTaskViews({ ...rest, ...(status ? { status: status as TaskStatus } : {}) }),
+      ctx.world.listTaskViews({
+        ...rest,
+        ...(status ? { status: status as TaskStatus } : {}),
+        ...(priority ? { priority: priority as TaskPriority } : {}),
+      }),
     );
   });
 

@@ -115,4 +115,26 @@ export const MIGRATIONS: Migration[] = [
       CREATE INDEX idx_activity_project ON activity_events(project_id);
     `,
   },
+  {
+    id: 2,
+    name: 'task_priority_and_agent_briefs',
+    sql: /* sql */ `
+      -- Priority orders the board and decides who gets picked up first.
+      ALTER TABLE tasks ADD COLUMN priority TEXT NOT NULL DEFAULT 'normal';
+
+      -- Every task now records when it last changed, not only when it started
+      -- and finished.
+      ALTER TABLE tasks ADD COLUMN updated_at INTEGER NOT NULL DEFAULT 0;
+      UPDATE tasks SET updated_at = created_at WHERE updated_at = 0;
+
+      -- An agent's brief becomes data rather than a compile-time constant:
+      -- 'instructions' is what a real engine would send as a system prompt, and
+      -- 'tools' is what it would be allowed to reach for. Both are editable.
+      ALTER TABLE bots ADD COLUMN role TEXT NOT NULL DEFAULT '';
+      ALTER TABLE bots ADD COLUMN instructions TEXT NOT NULL DEFAULT '';
+      ALTER TABLE bots ADD COLUMN tools TEXT NOT NULL DEFAULT '[]';
+
+      CREATE INDEX idx_tasks_priority ON tasks(priority);
+    `,
+  },
 ];

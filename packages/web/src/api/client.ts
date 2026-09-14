@@ -1,9 +1,11 @@
 import {
   API_BASE,
   type ApprovalRequest,
+  type Bot,
   type Id,
   type Project,
   type Task,
+  type TaskPriority,
   type TaskType,
   type WorldSnapshot,
 } from '@ai-islands/shared';
@@ -60,9 +62,18 @@ export interface CreateTaskInput {
   title: string;
   notes?: string;
   type: TaskType;
+  priority?: TaskPriority;
   needsApproval?: boolean;
   botId?: Id | null;
   autoStart?: boolean;
+}
+
+/** An agent's brief: what a real engine would send as its system prompt. */
+export interface UpdateBotInput {
+  name?: string;
+  role?: string;
+  instructions?: string;
+  tools?: string[];
 }
 
 /**
@@ -86,8 +97,10 @@ export const api = {
   deleteProject: (id: Id) => del<{ ok: true }>(`/projects/${id}`),
 
   createTask: (input: CreateTaskInput) => post<Task>('/tasks', input),
-  updateTask: (id: Id, input: { title?: string; notes?: string; needsApproval?: boolean }) =>
-    patch<Task>(`/tasks/${id}`, input),
+  updateTask: (
+    id: Id,
+    input: { title?: string; notes?: string; needsApproval?: boolean; priority?: TaskPriority },
+  ) => patch<Task>(`/tasks/${id}`, input),
   deleteTask: (id: Id) => del<{ ok: true }>(`/tasks/${id}`),
 
   assignTask: (id: Id, botId: Id) => post<unknown>(`/tasks/${id}/assign`, { botId }),
@@ -97,6 +110,8 @@ export const api = {
   cancelTask: (id: Id) => post<unknown>(`/tasks/${id}/cancel`),
   retryTask: (id: Id) => post<unknown>(`/tasks/${id}/retry`),
   resetTask: (id: Id) => post<unknown>(`/tasks/${id}/reset`),
+
+  updateBot: (id: Id, input: UpdateBotInput) => patch<Bot>(`/bots/${id}`, input),
 
   approve: (id: Id) => post<ApprovalRequest>(`/approvals/${id}/approve`),
   reject: (id: Id, note?: string) => post<ApprovalRequest>(`/approvals/${id}/reject`, { note }),

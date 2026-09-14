@@ -2,6 +2,7 @@ import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { BrowserRouter } from 'react-router-dom';
 import { App } from './App.js';
+import { CommandProvider } from './world/CommandProvider.js';
 import { WorldProvider } from './world/WorldProvider.js';
 import './styles/app.css';
 
@@ -12,7 +13,9 @@ createRoot(container).render(
   <StrictMode>
     <BrowserRouter>
       <WorldProvider>
-        <App />
+        <CommandProvider>
+          <App />
+        </CommandProvider>
       </WorldProvider>
     </BrowserRouter>
   </StrictMode>,

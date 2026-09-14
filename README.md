@@ -168,6 +168,7 @@ Copy `.env.example` to `.env`. The defaults work without it.
 | `PORT` | `4000` | API port |
 | `DATABASE_URL` | `file:./data/ai-islands.sqlite` | SQLite file; relative paths resolve from `packages/server` |
 | `AGENT_ENGINE` | `mock` | Which engine drives the world |
+| `MOCK_AUTO_ASSIGN` | `true` | Whether idle agents pick work off the board unprompted |
 | `AGENT_TICK_MS` | `500` | How often the engine advances the world |
 | `CORS_ORIGIN` | `http://localhost:5173` | Browser origin allowed to call the API |
 
@@ -177,28 +178,58 @@ yet.
 
 ---
 
+## What you can do
+
+Everything in the brief's required behaviour is working:
+
+| | Where |
+| --- | --- |
+| Create a project | **Projects → New project** |
+| View a project | **Projects →** any card |
+| Create tasks | **New task**, on the task board or inside a project |
+| Assign a task to an agent | **Assign** / **Reassign** on any task card |
+| Start a task | **Start** on a task that is on the board |
+| Pause a task | **Pause** on running work — progress is held, not lost |
+| Cancel a task | **Cancel** — progress is kept for the record |
+| Mark a task as requiring approval | The checkbox when creating it, or on the task |
+| Approve or reject | **Approvals**, or straight from the task card |
+| View task progress | Progress bars, live, everywhere a task appears |
+| View bot status | **The team**, the workspace rail, or any agent's page |
+| View recent activity | **Activity**, and per-project and per-agent feeds |
+| Reset demo data | **Settings → Reset demo data** |
+
+### How the work actually flows
+
+1. A task is created. Its **kind of work** decides which island it happens on
+   and which agent naturally owns it.
+2. You assign it — to the natural owner, or to anyone. An agent given work on
+   another island **travels there**.
+3. On **Start**, the agent walks to the Workbench and progress begins.
+4. At 100% it either carries the work to the **Approval Post** and waits for
+   you, or — if the task does not need approval — heads straight for the depot.
+5. **Approve** and the agent walks the work to the **Delivery Depot**. Arriving
+   there is what completes the task, adds a crate and writes the log line.
+   **Request changes** reopens the work with your note attached, and the agent
+   carries on from where it was.
+
+Nothing skips a step: approving does not complete a task on its own, and an
+agent never delivers work that needs sign-off without it.
+
+---
+
 ## Current state
 
-**Milestone 1 is complete and read-only.** The world is live: agents work, walk,
-finish, raise approval requests and go quiet waiting for you. What you cannot do
-yet is act on any of it.
-
-Working now:
+Milestones 1 and 2 are complete. The world runs, and you can drive it.
 
 - Seeded SQLite world with five islands, five agents and three projects
 - Mock engine driving all seven agent states, ticking at 2 Hz
+- Full command API: projects, tasks, assignment, execution and approvals
 - Live updates over Server-Sent Events, with automatic reconnection
-- All eight screens, rendering real data
-- Reset demo data
-- 24 server tests
+- All eight screens, rendering and mutating real data
+- 58 server tests
 
-Not yet built — these are Milestone 2:
+Still to come:
 
-- Creating projects and tasks
-- Assigning, starting, pausing and cancelling work
-- Approving and rejecting from the approval queue
-
-Because approve is not implemented, the demo world eventually goes quiet: agents
-finish their work, carry it to the Approval Post, and wait. That is the honest
-behaviour of a read-only build. **Settings → Reset demo data** starts it moving
-again.
+- Real Claude agents behind the existing `AgentEngine` interface
+- Authentication, and more than one world
+- Retention on the activity log

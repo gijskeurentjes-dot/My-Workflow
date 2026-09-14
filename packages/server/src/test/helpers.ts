@@ -4,12 +4,14 @@ import { createSqliteRepositories } from '../repositories/sqlite/index.js';
 import type { Repositories } from '../repositories/types.js';
 import { MockAgentEngine, type MockAgentEngineOptions } from '../services/agents/mock-agent-engine.js';
 import { WorldService } from '../services/world.service.js';
+import { WorkflowService } from '../services/workflow.service.js';
 
 export interface TestWorld {
   db: Db;
   repos: Repositories;
   engine: MockAgentEngine;
   world: WorldService;
+  workflow: WorkflowService;
   /**
    * Step the simulation forward by `seconds` of simulated time.
    *
@@ -49,12 +51,14 @@ export function createTestWorld(options: TestWorldOptions = {}): TestWorld {
   });
 
   const world = new WorldService(repos, engine);
+  const workflow = new WorkflowService(repos);
 
   return {
     db,
     repos,
     engine,
     world,
+    workflow,
     now: () => clock,
     fastForward(seconds: number, stepMs = 250): void {
       const steps = Math.max(1, Math.round((seconds * 1000) / stepMs));

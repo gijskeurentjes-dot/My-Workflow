@@ -7,6 +7,7 @@ import { Broadcaster } from './realtime/broadcaster.js';
 import type { AgentEngine, EngineChanges } from './services/agents/agent-engine.js';
 import { MockAgentEngine } from './services/agents/mock-agent-engine.js';
 import { WorldService } from './services/world.service.js';
+import { WorkflowService } from './services/workflow.service.js';
 
 /**
  * Everything the app is built from, wired together in one place.
@@ -19,7 +20,15 @@ export interface AppContext {
   repos: Repositories;
   engine: AgentEngine;
   world: WorldService;
+  workflow: WorkflowService;
   broadcaster: Broadcaster;
+  /**
+   * Push a set of changes to every connected browser.
+   *
+   * Routes call this after a command so a click and an engine tick reach the
+   * UI by exactly the same path — there is no second way for state to arrive.
+   */
+  publish(changes: EngineChanges): void;
   /** Wipe the world and replay the demo seed. */
   resetDemoData(): void;
   shutdown(): void;
@@ -60,34 +69,47 @@ export function createContext(options: CreateContextOptions = {}): AppContext {
   const repos = createSqliteRepositories(db);
   const broadcaster = new Broadcaster(config.heartbeatMs);
 
+  /**
+   * Turn a set of changes into stream events.
+   *
+   * Declared before the engine so both the engine's ticks and the workflow
+   * service's commands can hand changes to the same function.
+   */
+  const publish = (changes: EngineChanges): void => {
+    const at = Date.now();
+    if (changes.bots.length || changes.tasks.length) {
+      broadcaster.broadcast({
+        type: 'tick',
+        at,
+        bots: changes.bots,
+        tasks: changes.tasks,
+        stats: world.stats(),
+      });
+    }
+    if (changes.activity.length) {
+      // Newest first, matching the order the activity log renders in.
+      broadcaster.broadcast({ type: 'activity', at, events: [...changes.activity].reverse() });
+    }
+    if (changes.approvals.length || changes.approvalsChanged) {
+      broadcaster.broadcast({ type: 'approvals', at, approvals: repos.approvals.list() });
+    }
+    if (changes.islandsChanged) {
+      broadcaster.broadcast({ type: 'islands', at, islands: repos.islands.list() });
+    }
+    // A command can create or delete a project, which no other event carries.
+    if (changes.projectsChanged) {
+      broadcaster.broadcast({ type: 'projects', at, projects: repos.projects.list() });
+    }
+  };
+
   const engine = buildEngine(repos, {
     tickMs: options.tickMs ?? config.agentTickMs,
-    autoAssign: options.autoAssign ?? true,
-    onChange: (changes) => {
-      const at = Date.now();
-      if (changes.bots.length || changes.tasks.length) {
-        broadcaster.broadcast({
-          type: 'tick',
-          at,
-          bots: changes.bots,
-          tasks: changes.tasks,
-          stats: world.stats(),
-        });
-      }
-      if (changes.activity.length) {
-        // Newest first, matching the order the activity log renders in.
-        broadcaster.broadcast({ type: 'activity', at, events: [...changes.activity].reverse() });
-      }
-      if (changes.approvals.length) {
-        broadcaster.broadcast({ type: 'approvals', at, approvals: repos.approvals.list() });
-      }
-      if (changes.islandsChanged) {
-        broadcaster.broadcast({ type: 'islands', at, islands: repos.islands.list() });
-      }
-    },
+    autoAssign: options.autoAssign ?? config.mockAutoAssign,
+    onChange: publish,
   });
 
   const world = new WorldService(repos, engine, config.activityLimit);
+  const workflow = new WorkflowService(repos);
 
   if (options.seed !== false && isEmptyWorld(repos)) {
     seedWorld(repos);
@@ -102,7 +124,9 @@ export function createContext(options: CreateContextOptions = {}): AppContext {
     repos,
     engine,
     world,
+    workflow,
     broadcaster,
+    publish,
 
     resetDemoData(): void {
       repos.reset();

@@ -1,11 +1,12 @@
 import { useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { PLOTS, PLOT_KEYS, type PlotKey } from '@ai-islands/shared';
+import { TaskCard } from '../components/TaskCard.js';
 import { ActivityFeed, Avatar, EmptyState, ProgressBar, StatusPill } from '../components/ui.js';
 import { useTheme } from '../useTheme.js';
 import { useWorld } from '../world/WorldProvider.js';
 import { useAnimationClock, useSlowClock } from '../world/useAnimationClock.js';
-import { botsForIsland, toTaskDisplay } from '../world/selectors.js';
+import { botsForIsland } from '../world/selectors.js';
 import { IslandScene } from '../world/scene/IslandScene.js';
 
 /** One island, full size, with its agents and the work happening there. */
@@ -170,32 +171,9 @@ export function IslandDetail() {
               Work here <span className="count">{openTasks.length}</span>
             </h4>
             {openTasks.length === 0 && <p className="muted">Nothing open on this island.</p>}
-            {openTasks.map((task) => {
-              const d = toTaskDisplay(world, task);
-              return (
-                <div className="task" key={task.id}>
-                  <div className="between">
-                    <span className="task-t">{task.title}</span>
-                    <StatusPill status={task.status} />
-                  </div>
-                  <div className="tags">
-                    {d.project && (
-                      <span className="tag">
-                        <span
-                          className="project-swatch"
-                          style={{ background: d.project.color }}
-                          aria-hidden="true"
-                        />
-                        {d.project.name}
-                      </span>
-                    )}
-                    <span className="tag">
-                      {d.typeInfo.icon} {d.typeInfo.label}
-                    </span>
-                  </div>
-                </div>
-              );
-            })}
+            {openTasks.map((task) => (
+              <TaskCard key={task.id} world={world} task={task} now={slowClock} compact />
+            ))}
           </div>
 
           <div className="card">

@@ -46,7 +46,9 @@ db/seed.ts                    The demo world
 repositories/types.ts         The persistence seam  ← PostgreSQL slots in here
 repositories/sqlite/          The SQLite implementation
 services/world.service.ts     The read side: snapshots, stats, joined views
+services/workflow.service.ts  The command side: every transition you can trigger
 services/agents/              The agent engine seam  ← real agents slot in here
+errors.ts                     WorkflowError, carrying the HTTP status with the rule
 realtime/broadcaster.ts       The SSE hub
 routes/                       One router per resource
 ```
@@ -54,12 +56,16 @@ routes/                       One router per resource
 ### `web`
 
 ```
-api/client.ts                 REST calls (only the reset mutation today)
+api/client.ts                 Reads and the whole command API
+world/CommandProvider.tsx     Running commands: pending state, refusals, toasts
 world/WorldProvider.tsx       The client's copy of the world; SSE reducer
 world/selectors.ts            Derived views: joins, grouping, interpolation
 world/useAnimationClock.ts    A per-frame clock, reduced-motion aware
 world/scene/                  The isometric SVG renderer
 components/ui.tsx             Status pills, avatars, progress bars, the feed
+components/TaskCard.tsx       One task, with the controls its status allows
+components/Dialog.tsx         Modal with focus handling
+components/CreateDialogs.tsx  New project and new task forms
 screens/                      One file per screen
 App.tsx                       Shell, navigation, routing, the loading gate
 ```
@@ -144,6 +150,52 @@ minute does not finish every task at once when it wakes.
 Idle agents pick work off the board on their own (`autoAssign`, on by default),
 which is the mock stand-in for Atlas delegating. A real engine would ask the
 project manager agent to make that call.
+
+---
+
+## Two sides, one path out
+
+The world changes for two reasons: the engine advances work on its own, and you
+issue a command. `WorkflowService` is the second one. Both write through the
+same repositories and both report what changed as `EngineChanges`, so a task
+started by hand and a task picked up automatically are indistinguishable
+downstream.
+
+Every rule about which transition is legal lives in `WorkflowService`. Routes
+translate HTTP into a call and nothing more; the UI disables buttons only as a
+courtesy. A refusal comes back as a `WorkflowError` carrying its own status —
+`409` for an illegal transition, `404` for something missing, `400` for a bad
+body — and the client shows the sentence it came with, because "Only work in
+progress can be paused — this task is paused" is more use than a greyed button.
+
+Each action is its own endpoint (`POST /api/tasks/:id/pause`) rather than a
+status field a client could set to anything. The legal transitions stay on the
+server.
+
+### Commands publish through the stream, not through their responses
+
+`routes/helpers.ts` wraps every write: run the command, hand its changes to
+`ctx.publish`, answer. Mutations deliberately do *not* merge their own responses
+into client state — the same command has already broadcast over SSE, and letting
+that single path do the updating keeps every open screen in step. Two browsers
+watching the same board both move when either one clicks.
+
+### One invariant worth naming
+
+A pending approval request whose task has moved on is a card in the queue that
+can never be approved. Four things take work out of `waiting_approval` without
+you deciding: cancelling it, resetting it, taking it off its agent, and
+reassigning that agent to something else. All four go through
+`withdrawApproval`, and a test pins each one — plus a churn test that runs
+commands and ticks together and asserts the queue stays coherent throughout.
+
+The work is not lost when this happens: the task keeps its progress and goes
+back on the board, so it finishes again immediately and asks for your decision a
+second time.
+
+Deleting is the odd case: the approval row is cascade-deleted with its task, so
+there is no row to broadcast. `EngineChanges.approvalsChanged` is the flag that
+refreshes a queue someone is looking at.
 
 ---
 
@@ -239,9 +291,13 @@ Called out so they read as decisions rather than oversights.
 
 - **No authentication.** There is no concept of a user yet; the world is
   single-tenant.
-- **No write API beyond reset.** Milestone 1 is read-only by design; the
-  mutation routes arrive with the controls that use them.
-- **No optimistic UI.** With mutations landing next, the pattern to use is worth
-  choosing alongside them rather than in advance.
+- **No optimistic UI.** Commands wait for the server and update through the
+  stream. Locally that is a few milliseconds; over a slow link a button shows a
+  pending state. The alternative — predicting the result client-side — would
+  mean duplicating the transition rules in the browser, which is exactly what
+  keeping them in one place is meant to avoid.
+- **No undo.** Cancelling keeps a task and its progress, and deleting asks
+  first, so the destructive paths are recoverable or guarded rather than
+  reversible.
 - **Activity log is unbounded.** Fine for a demo; a production build would need
   retention.

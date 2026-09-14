@@ -46,6 +46,13 @@ export interface EngineChanges {
   approvals: ApprovalRequest[];
   /** True when a crate was delivered and an island's count went up. */
   islandsChanged: boolean;
+  /** True when a project was created, edited or deleted. */
+  projectsChanged: boolean;
+  /**
+   * True when the approval queue changed in a way no row in `approvals`
+   * describes — a request that was withdrawn, or deleted with its task.
+   */
+  approvalsChanged: boolean;
 }
 
 export const NO_CHANGES: EngineChanges = Object.freeze({
@@ -54,6 +61,8 @@ export const NO_CHANGES: EngineChanges = Object.freeze({
   activity: [],
   approvals: [],
   islandsChanged: false,
+  projectsChanged: false,
+  approvalsChanged: false,
 });
 
 export const hasChanges = (c: EngineChanges): boolean =>
@@ -61,7 +70,9 @@ export const hasChanges = (c: EngineChanges): boolean =>
   c.tasks.length > 0 ||
   c.activity.length > 0 ||
   c.approvals.length > 0 ||
-  c.islandsChanged;
+  c.islandsChanged ||
+  c.projectsChanged ||
+  c.approvalsChanged;
 
 /**
  * Accumulates a tick's changes, keeping one entry per row so a bot touched
@@ -73,6 +84,8 @@ export class ChangeSet {
   private readonly approvalMap = new Map<string, ApprovalRequest>();
   private readonly events: ActivityEvent[] = [];
   private islandsTouched = false;
+  private projectsTouched = false;
+  private approvalsTouched = false;
 
   bot(bot: Bot | null): void {
     if (bot) this.botMap.set(bot.id, bot);
@@ -94,6 +107,15 @@ export class ChangeSet {
     this.islandsTouched = true;
   }
 
+  projects(): void {
+    this.projectsTouched = true;
+  }
+
+  /** Mark the queue dirty when a request vanished rather than changed. */
+  approvalsDirty(): void {
+    this.approvalsTouched = true;
+  }
+
   build(): EngineChanges {
     return {
       bots: [...this.botMap.values()],
@@ -101,6 +123,8 @@ export class ChangeSet {
       approvals: [...this.approvalMap.values()],
       activity: this.events,
       islandsChanged: this.islandsTouched,
+      projectsChanged: this.projectsTouched,
+      approvalsChanged: this.approvalsTouched,
     };
   }
 }

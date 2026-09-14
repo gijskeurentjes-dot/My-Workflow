@@ -1,10 +1,29 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import type { AppContext } from '../context.js';
+import { command, parseBody } from './helpers.js';
 
 const listQuery = z.object({
   status: z.enum(['active', 'paused', 'archived']).optional(),
 });
+
+const createBody = z.object({
+  name: z.string().min(1, 'A project needs a name').max(120),
+  goal: z.string().max(600).optional(),
+  color: z
+    .string()
+    .regex(/^#[0-9a-fA-F]{6}$/, 'Colour must be a hex value like #4a8ff0')
+    .optional(),
+});
+
+const updateBody = z
+  .object({
+    name: z.string().min(1).max(120).optional(),
+    goal: z.string().max(600).optional(),
+    status: z.enum(['active', 'paused', 'archived']).optional(),
+    color: z.string().regex(/^#[0-9a-fA-F]{6}$/).optional(),
+  })
+  .refine((v) => Object.keys(v).length > 0, { message: 'Nothing to update' });
 
 export function createProjectsRouter(ctx: AppContext): Router {
   const router = Router();
@@ -46,6 +65,36 @@ export function createProjectsRouter(ctx: AppContext): Router {
       tasks: ctx.world.listTaskViews({ projectId: project.id }),
       activity: ctx.world.listActivity({ projectId: project.id, limit: 40 }),
     });
+  });
+
+  router.post('/', (req, res) => {
+    const body = parseBody(createBody, req.body, res);
+    if (!body) return;
+    command(
+      ctx,
+      res,
+      () => {
+        const { project, changes } = ctx.workflow.createProject(body);
+        return { changes, body: project };
+      },
+      201,
+    );
+  });
+
+  router.patch('/:id', (req, res) => {
+    const body = parseBody(updateBody, req.body, res);
+    if (!body) return;
+    command(ctx, res, () => {
+      const { project, changes } = ctx.workflow.updateProject(req.params.id, body);
+      return { changes, body: project };
+    });
+  });
+
+  router.delete('/:id', (req, res) => {
+    command(ctx, res, () => ({
+      changes: ctx.workflow.deleteProject(req.params.id),
+      body: { ok: true },
+    }));
   });
 
   return router;

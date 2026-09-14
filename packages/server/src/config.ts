@@ -11,6 +11,12 @@ function str(name: string, fallback: string): string {
   return v === undefined || v === '' ? fallback : v;
 }
 
+function bool(name: string, fallback: boolean): boolean {
+  const raw = process.env[name];
+  if (raw === undefined || raw === '') return fallback;
+  return raw === 'true' || raw === '1';
+}
+
 function int(name: string, fallback: number): number {
   const raw = process.env[name];
   if (raw === undefined || raw === '') return fallback;
@@ -49,6 +55,14 @@ export const config = {
    */
   agentEngine: str('AGENT_ENGINE', 'mock'),
   agentTickMs: int('AGENT_TICK_MS', 500),
+
+  /**
+   * Whether idle agents take waiting work off the board by themselves.
+   *
+   * On by default so the world keeps moving without anyone clicking. Turn it
+   * off to drive every task by hand.
+   */
+  mockAutoAssign: bool('MOCK_AUTO_ASSIGN', true),
 
   corsOrigin: str('CORS_ORIGIN', 'http://localhost:5173'),
 

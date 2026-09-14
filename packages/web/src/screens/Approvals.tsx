@@ -1,28 +1,45 @@
+import { useState } from 'react';
 import { Link } from 'react-router-dom';
+import { api } from '../api/client.js';
 import { Avatar, EmptyState, StatusPill, timeAgo } from '../components/ui.js';
+import { useCommands } from '../world/CommandProvider.js';
 import { useWorld } from '../world/WorldProvider.js';
 import { useSlowClock } from '../world/useAnimationClock.js';
 
 /**
  * Work that is finished but not delivered, because an agent is waiting on you.
  *
- * Approving and rejecting are M2; this milestone shows the queue and where each
- * request came from.
+ * Approving sends it to the depot; sending it back reopens the work with your
+ * note attached, and the agent carries on from where it was.
  */
 export function Approvals() {
   const world = useWorld();
   const now = useSlowClock();
+  const { run, isPending } = useCommands();
+  const [rejectingId, setRejectingId] = useState<string | null>(null);
+  const [note, setNote] = useState('');
 
   const pending = world.approvals.filter((a) => a.status === 'pending');
-  const decided = world.approvals.filter((a) => a.status !== 'pending');
+  const decided = world.approvals.filter((a) => a.status !== 'pending').slice(0, 12);
 
-  const rowsFor = (ids: typeof pending) =>
-    ids.map((approval) => {
-      const task = world.tasks.find((t) => t.id === approval.taskId);
-      const bot = world.bots.find((b) => b.id === approval.botId);
-      const project = task ? world.projects.find((p) => p.id === task.projectId) : null;
-      return { approval, task, bot, project };
-    });
+  const join = (approval: (typeof world.approvals)[number]) => {
+    const task = world.tasks.find((t) => t.id === approval.taskId);
+    const bot = world.bots.find((b) => b.id === approval.botId);
+    const project = task ? world.projects.find((p) => p.id === task.projectId) : null;
+    return { task, bot, project };
+  };
+
+  const sendBack = async (approvalId: string) => {
+    const ok = await run(
+      `reject:${approvalId}`,
+      () => api.reject(approvalId, note),
+      'Sent back for changes',
+    );
+    if (ok) {
+      setRejectingId(null);
+      setNote('');
+    }
+  };
 
   return (
     <div className="page">
@@ -51,52 +68,109 @@ export function Approvals() {
           </div>
 
           <div className="grid-cards">
-            {rowsFor(pending).map(({ approval, task, bot, project }) => (
-              <article className="list-card" key={approval.id} style={{ cursor: 'default' }}>
-                <div className="row" style={{ marginBottom: 8 }}>
-                  {bot && <Avatar botKey={bot.key} size={34} />}
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div className="bot-name">{task?.title ?? 'Unknown task'}</div>
-                    <div className="bot-role">
-                      {bot?.name ?? 'An agent'} · {timeAgo(approval.requestedAt, now)}
+            {pending.map((approval) => {
+              const { task, bot, project } = join(approval);
+              const busy =
+                isPending(`approve:${approval.id}`) || isPending(`reject:${approval.id}`);
+
+              return (
+                <article className="list-card" key={approval.id} style={{ cursor: 'default' }}>
+                  <div className="row" style={{ marginBottom: 8 }}>
+                    {bot && <Avatar botKey={bot.key} size={34} />}
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div className="bot-name">{task?.title ?? 'Unknown task'}</div>
+                      <div className="bot-role">
+                        {bot?.name ?? 'An agent'} · {timeAgo(approval.requestedAt, now)}
+                      </div>
                     </div>
+                    <StatusPill status="waiting_approval" />
                   </div>
-                  <StatusPill status="waiting_approval" />
-                </div>
 
-                <p className="muted">{approval.summary}</p>
+                  <p className="muted">{approval.summary}</p>
 
-                <div className="tags">
-                  {project && (
-                    <Link
-                      to={`/projects/${project.id}`}
-                      className="tag"
-                      style={{ textDecoration: 'none' }}
-                    >
-                      <span
-                        className="project-swatch"
-                        style={{ background: project.color }}
-                        aria-hidden="true"
+                  <div className="tags">
+                    {project && (
+                      <Link
+                        to={`/projects/${project.id}`}
+                        className="tag"
+                        style={{ textDecoration: 'none' }}
+                      >
+                        <span
+                          className="project-swatch"
+                          style={{ background: project.color }}
+                          aria-hidden="true"
+                        />
+                        {project.name}
+                      </Link>
+                    )}
+                    {bot && (
+                      <Link to={`/bots/${bot.id}`} className="tag" style={{ textDecoration: 'none' }}>
+                        View {bot.name}
+                      </Link>
+                    )}
+                  </div>
+
+                  {rejectingId === approval.id ? (
+                    <div style={{ marginTop: 12 }}>
+                      <div className="label">What needs changing?</div>
+                      <textarea
+                        className="input"
+                        rows={2}
+                        value={note}
+                        maxLength={500}
+                        autoFocus
+                        placeholder="Optional — the note is written to the activity log."
+                        onChange={(e) => setNote(e.target.value)}
                       />
-                      {project.name}
-                    </Link>
+                      <div className="acts">
+                        <button
+                          className="btn btn-sm btn-primary"
+                          disabled={busy}
+                          onClick={() => sendBack(approval.id)}
+                        >
+                          ↩ Send it back
+                        </button>
+                        <button
+                          className="btn btn-sm btn-ghost"
+                          onClick={() => {
+                            setRejectingId(null);
+                            setNote('');
+                          }}
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="acts" style={{ marginTop: 12 }}>
+                      <button
+                        className="btn btn-sm btn-primary"
+                        disabled={busy}
+                        onClick={() =>
+                          run(
+                            `approve:${approval.id}`,
+                            () => api.approve(approval.id),
+                            `Approved — ${bot?.name ?? 'the agent'} is delivering it`,
+                          )
+                        }
+                      >
+                        ✓ Approve and deliver
+                      </button>
+                      <button
+                        className="btn btn-sm"
+                        disabled={busy}
+                        onClick={() => {
+                          setRejectingId(approval.id);
+                          setNote('');
+                        }}
+                      >
+                        ↩ Request changes
+                      </button>
+                    </div>
                   )}
-                  {bot && (
-                    <Link to={`/bots/${bot.id}`} className="tag" style={{ textDecoration: 'none' }}>
-                      View {bot.name}
-                    </Link>
-                  )}
-                </div>
-
-                <div className="banner" style={{ marginTop: 12, marginBottom: 0 }}>
-                  <span aria-hidden="true">🔒</span>
-                  <span>
-                    Approve and reject arrive in the next milestone. Until then the request stays
-                    here and the agent keeps holding the work.
-                  </span>
-                </div>
-              </article>
-            ))}
+                </article>
+              );
+            })}
           </div>
         </>
       )}
@@ -105,15 +179,25 @@ export function Approvals() {
         <>
           <h2 style={{ fontSize: 17, margin: '26px 0 12px' }}>Already decided</h2>
           <div className="card" style={{ maxWidth: 700 }}>
-            {rowsFor(decided).map(({ approval, task }) => (
-              <div className="kv" key={approval.id}>
-                <span>{task?.title ?? 'Unknown task'}</span>
-                <b>
-                  {approval.status === 'approved' ? 'Approved' : 'Sent back'} ·{' '}
-                  {approval.decidedAt ? timeAgo(approval.decidedAt, now) : ''}
-                </b>
-              </div>
-            ))}
+            {decided.map((approval) => {
+              const { task } = join(approval);
+              return (
+                <div className="kv" key={approval.id}>
+                  <span>
+                    {task?.title ?? 'Unknown task'}
+                    {approval.note && (
+                      <span className="muted" style={{ display: 'block', fontSize: 11.5 }}>
+                        “{approval.note}”
+                      </span>
+                    )}
+                  </span>
+                  <b>
+                    {approval.status === 'approved' ? 'Approved' : 'Sent back'}
+                    {approval.decidedAt ? ` · ${timeAgo(approval.decidedAt, now)}` : ''}
+                  </b>
+                </div>
+              );
+            })}
           </div>
         </>
       )}

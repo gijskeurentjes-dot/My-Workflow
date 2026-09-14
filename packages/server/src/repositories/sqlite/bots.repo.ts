@@ -66,6 +66,10 @@ export function createBotRepository(db: Db): BotRepository {
         sets.push('task_id = @task_id');
         params.task_id = patch.taskId;
       }
+      if (patch.islandId !== undefined) {
+        sets.push('island_id = @island_id');
+        params.island_id = patch.islandId;
+      }
       if (patch.locationKey !== undefined) {
         sets.push('location_key = @location_key');
         params.location_key = patch.locationKey;

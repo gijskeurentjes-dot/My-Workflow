@@ -8,6 +8,7 @@ import {
   SimulatedNotice,
   StatusPill,
 } from '../components/ui.js';
+import { TaskCard } from '../components/TaskCard.js';
 import { useWorld } from '../world/WorldProvider.js';
 import { useAnimationClock, useSlowClock } from '../world/useAnimationClock.js';
 import { toBotDisplay, toTaskDisplay } from '../world/selectors.js';
@@ -123,13 +124,15 @@ export function BotDetail() {
                 />
               </div>
             )}
-            {task?.blocker && (
-              <div className="banner error" style={{ marginTop: 12, marginBottom: 0 }}>
-                <span aria-hidden="true">⚠</span>
-                <span>{task.blocker}</span>
-              </div>
-            )}
           </div>
+
+          {/* Drive the work this agent is holding, without leaving the page. */}
+          {task && (
+            <div className="card">
+              <h4>Current task</h4>
+              <TaskCard world={world} task={task} now={now} showIsland />
+            </div>
+          )}
 
           <div className="card">
             <h4>Responsibilities</h4>

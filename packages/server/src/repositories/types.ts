@@ -45,6 +45,11 @@ export interface BotRepository {
 export interface BotPatch {
   status?: Bot['status'];
   taskId?: Id | null;
+  /**
+   * Agents relocate when they are given work on another island. Home is where
+   * they return when idle, but it is not where they are stuck.
+   */
+  islandId?: Id;
   locationKey?: Bot['locationKey'];
   movement?: Bot['movement'];
   progress?: number;

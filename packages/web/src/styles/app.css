@@ -1060,3 +1060,298 @@ table.data td {
     transition-duration: 0.001s !important;
   }
 }
+
+/* ─────────────────────────── Forms and dialogs ──────────────────────── */
+
+.input {
+  width: 100%;
+  font-family: inherit;
+  font-size: 13.5px;
+  padding: 9px 11px;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  background: var(--panel);
+  color: var(--ink);
+}
+
+.input:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: -1px;
+}
+
+textarea.input {
+  resize: vertical;
+  min-height: 56px;
+}
+
+.field {
+  margin-bottom: 14px;
+}
+
+.label {
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+  margin-bottom: 6px;
+}
+
+.check {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  font-size: 13px;
+  line-height: 1.45;
+  margin-bottom: 10px;
+  cursor: pointer;
+}
+
+.check input {
+  margin-top: 2px;
+  flex: 0 0 auto;
+  accent-color: var(--brand);
+  width: 15px;
+  height: 15px;
+}
+
+.swatches {
+  display: flex;
+  gap: 9px;
+  flex-wrap: wrap;
+}
+
+.swatch {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  cursor: pointer;
+  border: 2px solid transparent;
+  box-shadow: var(--sh-1);
+  padding: 0;
+}
+
+.swatch.on {
+  border-color: var(--ink);
+  transform: scale(1.1);
+}
+
+.pickrow {
+  display: grid;
+  gap: 7px;
+}
+
+.pick {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  border: 1.5px solid var(--line);
+  border-radius: 11px;
+  padding: 9px 10px;
+  cursor: pointer;
+  background: var(--panel);
+  color: var(--ink);
+  text-align: left;
+  width: 100%;
+}
+
+.pick.on {
+  border-color: var(--brand);
+  background: var(--brand-soft);
+}
+
+.pick b {
+  font-size: 13px;
+  display: block;
+}
+
+.pick > span > span {
+  font-size: 11.5px;
+  color: var(--ink-3);
+}
+
+.modal-bg {
+  position: fixed;
+  inset: 0;
+  background: rgba(25, 18, 8, 0.45);
+  backdrop-filter: blur(3px);
+  z-index: 100;
+  display: grid;
+  place-items: center;
+  padding: 18px;
+}
+
+.modal {
+  width: 100%;
+  max-width: 460px;
+  max-height: 88vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  box-shadow: var(--sh-3);
+  overflow: hidden;
+}
+
+.modal-h {
+  padding: 18px 20px 2px;
+}
+
+.modal-b {
+  padding: 14px 20px 4px;
+  overflow-y: auto;
+}
+
+.modal-f {
+  padding: 14px 20px 18px;
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+/* ─────────────────────────── Task controls ──────────────────────────── */
+
+.acts {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  align-items: center;
+  margin-top: 10px;
+}
+
+.btn-bad {
+  color: var(--bad);
+  border-color: color-mix(in srgb, var(--bad) 40%, transparent);
+}
+
+.btn-bad:hover:not(:disabled) {
+  background: var(--bad-bg);
+}
+
+.icon-btn {
+  width: 28px;
+  height: 28px;
+  border-radius: 9px;
+  border: 1px solid transparent;
+  background: none;
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  color: var(--ink-3);
+  font-size: 13px;
+}
+
+.icon-btn:hover {
+  background: var(--bad-bg);
+  color: var(--bad);
+  border-color: var(--bad);
+}
+
+.assign-picker {
+  margin-top: 10px;
+  padding: 10px;
+  border-radius: 11px;
+  background: var(--sunken);
+  border: 1px solid var(--line);
+}
+
+.assign-option {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  padding: 7px 8px;
+  border-radius: 9px;
+  border: 1px solid transparent;
+  background: var(--panel);
+  color: inherit;
+  cursor: pointer;
+  margin-bottom: 5px;
+  text-align: left;
+}
+
+.assign-option:last-child {
+  margin-bottom: 0;
+}
+
+.assign-option:hover:not(:disabled) {
+  border-color: var(--brand);
+}
+
+.assign-option:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* ─────────────────────────── Toasts ─────────────────────────────────── */
+
+.toasts {
+  position: fixed;
+  bottom: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 200;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: center;
+  width: min(520px, calc(100vw - 32px));
+}
+
+.toast {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  width: 100%;
+  padding: 11px 13px;
+  border-radius: 12px;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.45;
+  box-shadow: var(--sh-3);
+  border: 1px solid transparent;
+  animation: toast-in 0.22s cubic-bezier(0.2, 0.8, 0.25, 1) both;
+}
+
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+}
+
+.toast-ok {
+  background: var(--ink);
+  color: var(--paper);
+}
+
+.toast-bad {
+  background: var(--bad-bg);
+  color: var(--bad);
+  border-color: var(--bad);
+}
+
+.toast-x {
+  background: none;
+  border: none;
+  color: inherit;
+  opacity: 0.6;
+  cursor: pointer;
+  font-size: 12px;
+  padding: 0 2px;
+  flex: 0 0 auto;
+}
+
+.toast-x:hover {
+  opacity: 1;
+}
+
+/* ─────────────────────────── Page header actions ────────────────────── */
+
+.head-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 14px;
+}

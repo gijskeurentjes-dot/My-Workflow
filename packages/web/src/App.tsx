@@ -10,6 +10,7 @@ import { Projects } from './screens/Projects.js';
 import { Settings } from './screens/Settings.js';
 import { TaskBoard } from './screens/TaskBoard.js';
 import { Workspace } from './screens/Workspace.js';
+import { Toasts } from './components/Toasts.js';
 import { useWorldContext } from './world/WorldProvider.js';
 
 const NAV = [
@@ -125,6 +126,8 @@ export function App() {
           </WorldGate>
         </main>
       </div>
+
+      <Toasts />
     </>
   );
 }

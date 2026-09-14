@@ -1,0 +1,52 @@
+import { Router } from 'express';
+import { z } from 'zod';
+import type { AppContext } from '../context.js';
+
+const listQuery = z.object({
+  status: z.enum(['active', 'paused', 'archived']).optional(),
+});
+
+export function createProjectsRouter(ctx: AppContext): Router {
+  const router = Router();
+
+  router.get('/', (req, res) => {
+    const parsed = listQuery.safeParse(req.query);
+    if (!parsed.success) {
+      res.status(400).json({ error: 'Invalid query', details: parsed.error.flatten() });
+      return;
+    }
+
+    const projects = ctx.repos.projects.list(parsed.data);
+    // Each card shows counts, so compute them here rather than making the
+    // client fetch every task just to render a progress bar.
+    res.json(
+      projects.map((project) => {
+        const tasks = ctx.repos.tasks.list({ projectId: project.id });
+        return {
+          ...project,
+          taskCount: tasks.length,
+          completedCount: tasks.filter((t) => t.status === 'completed').length,
+          openCount: tasks.filter((t) => t.status !== 'completed' && t.status !== 'cancelled').length,
+          blockedCount: tasks.filter((t) => t.status === 'failed').length,
+          awaitingApprovalCount: tasks.filter((t) => t.status === 'waiting_approval').length,
+        };
+      }),
+    );
+  });
+
+  router.get('/:id', (req, res) => {
+    const project = ctx.repos.projects.findById(req.params.id);
+    if (!project) {
+      res.status(404).json({ error: 'Project not found' });
+      return;
+    }
+
+    res.json({
+      project,
+      tasks: ctx.world.listTaskViews({ projectId: project.id }),
+      activity: ctx.world.listActivity({ projectId: project.id, limit: 40 }),
+    });
+  });
+
+  return router;
+}

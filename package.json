@@ -1,0 +1,28 @@
+{
+  "name": "ai-islands",
+  "version": "0.1.0",
+  "private": true,
+  "description": "AI Islands — a visual AI-agent workspace",
+  "workspaces": [
+    "packages/shared",
+    "packages/server",
+    "packages/web"
+  ],
+  "scripts": {
+    "build:shared": "npm run build -w @ai-islands/shared",
+    "dev": "npm run build:shared && concurrently -n server,web -c cyan,magenta \"npm:dev:server\" \"npm:dev:web\"",
+    "dev:server": "npm run dev -w @ai-islands/server",
+    "dev:web": "npm run dev -w @ai-islands/web",
+    "build": "npm run build:shared && npm run build -w @ai-islands/server && npm run build -w @ai-islands/web",
+    "test": "npm run build:shared && npm run test -w @ai-islands/server",
+    "typecheck": "npm run build:shared && npm run typecheck -w @ai-islands/server && npm run typecheck -w @ai-islands/web",
+    "db:reset": "npm run db:reset -w @ai-islands/server"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.0",
+    "typescript": "^5.7.2"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

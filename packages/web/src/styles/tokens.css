@@ -1,0 +1,136 @@
+/*
+ * Design tokens, carried over from the AI Islands prototype.
+ *
+ * The light palette is defined on bare :root. Dark only redefines the tokens,
+ * in two places: under prefers-color-scheme for the system default, and under
+ * [data-theme="dark"] so an explicit choice wins in both directions.
+ */
+:root {
+  color-scheme: light;
+
+  --sky-1: #cfe9f7;
+  --sky-2: #e4f1f6;
+  --sky-3: #fbf2e4;
+  --cloud: #ffffff;
+  --cloud-edge: #dbeaf2;
+
+  --paper: #fffdf9;
+  --panel: #ffffff;
+  --sunken: #f4efe6;
+  --line: #e8dfcd;
+  --line-soft: #f1ebdd;
+  --ink: #2a251d;
+  --ink-2: #655d4f;
+  --ink-3: #9a9080;
+
+  --brand: #f4834f;
+  --brand-ink: #ffffff;
+  --brand-soft: #ffe8db;
+
+  --ok: #2f9e6b;
+  --ok-bg: #e0f4ea;
+  --warn: #d08a1e;
+  --warn-bg: #faeed3;
+  --info: #4a7fd4;
+  --info-bg: #e3edfb;
+  --violet: #7a63d8;
+  --violet-bg: #ebe7fb;
+  --bad: #cf5347;
+  --bad-bg: #fbe6e3;
+  --mute: #8d95a4;
+  --mute-bg: #edeff2;
+
+  --sh-1: 0 1px 2px rgba(60, 45, 20, 0.07);
+  --sh-2: 0 6px 18px rgba(60, 45, 20, 0.1);
+  --sh-3: 0 20px 46px rgba(40, 30, 15, 0.18);
+
+  --display: 'Fraunces', Georgia, serif;
+  --body: 'Manrope', 'Segoe UI', system-ui, sans-serif;
+  --mono: 'JetBrains Mono', ui-monospace, monospace;
+
+  --rail-w: 360px;
+  --nav-w: 216px;
+  --topbar-h: 58px;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    color-scheme: dark;
+
+    --sky-1: #101a33;
+    --sky-2: #182543;
+    --sky-3: #241f3d;
+    --cloud: #33456e;
+    --cloud-edge: #101a33;
+
+    --paper: #151a28;
+    --panel: #1c2231;
+    --sunken: #11151f;
+    --line: #2f3648;
+    --line-soft: #242a39;
+    --ink: #f0ece4;
+    --ink-2: #a9b0c0;
+    --ink-3: #767e91;
+
+    --brand: #f79366;
+    --brand-ink: #2a1206;
+    --brand-soft: #3b2620;
+
+    --ok: #4fc394;
+    --ok-bg: #14322a;
+    --warn: #e8b053;
+    --warn-bg: #352a13;
+    --info: #7aa8ef;
+    --info-bg: #1a2740;
+    --violet: #9d89ec;
+    --violet-bg: #26214a;
+    --bad: #ec7d70;
+    --bad-bg: #3a1f1d;
+    --mute: #98a0b2;
+    --mute-bg: #232937;
+
+    --sh-1: 0 1px 2px rgba(0, 0, 0, 0.4);
+    --sh-2: 0 6px 18px rgba(0, 0, 0, 0.45);
+    --sh-3: 0 20px 46px rgba(0, 0, 0, 0.6);
+  }
+}
+
+:root[data-theme='dark'] {
+  color-scheme: dark;
+
+  --sky-1: #101a33;
+  --sky-2: #182543;
+  --sky-3: #241f3d;
+  --cloud: #33456e;
+  --cloud-edge: #101a33;
+
+  --paper: #151a28;
+  --panel: #1c2231;
+  --sunken: #11151f;
+  --line: #2f3648;
+  --line-soft: #242a39;
+  --ink: #f0ece4;
+  --ink-2: #a9b0c0;
+  --ink-3: #767e91;
+
+  --brand: #f79366;
+  --brand-ink: #2a1206;
+  --brand-soft: #3b2620;
+
+  --ok: #4fc394;
+  --ok-bg: #14322a;
+  --warn: #e8b053;
+  --warn-bg: #352a13;
+  --info: #7aa8ef;
+  --info-bg: #1a2740;
+  --violet: #9d89ec;
+  --violet-bg: #26214a;
+  --bad: #ec7d70;
+  --bad-bg: #3a1f1d;
+  --mute: #98a0b2;
+  --mute-bg: #232937;
+
+  --sh-1: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --sh-2: 0 6px 18px rgba(0, 0, 0, 0.45);
+  --sh-3: 0 20px 46px rgba(0, 0, 0, 0.6);
+}

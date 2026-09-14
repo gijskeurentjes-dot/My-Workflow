@@ -1,0 +1,22 @@
+node_modules/
+dist/
+build/
+*.log
+.DS_Store
+
+# Local environment — never commit real secrets
+.env
+.env.local
+.env.*.local
+
+# SQLite database files are generated, not tracked
+data/
+*.sqlite
+*.sqlite-journal
+*.sqlite-wal
+*.sqlite-shm
+
+# Test / tooling output
+coverage/
+.vite/
+*.tsbuildinfo

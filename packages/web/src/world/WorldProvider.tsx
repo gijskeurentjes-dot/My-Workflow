@@ -12,8 +12,7 @@ import {
 import {
   SERVER_EVENT_TYPES,
   STREAM_PATH,
-  type ActivityEvent,
-  type Bot,
+  type Agent,
   type ServerEvent,
   type Task,
   type WorldSnapshot,
@@ -97,7 +96,7 @@ function reduce(state: State, action: Action): State {
             ...state,
             world: {
               ...world,
-              bots: mergeById<Bot>(world.bots, event.bots),
+              agents: mergeById<Agent>(world.agents, event.agents),
               tasks: mergeById<Task>(world.tasks, event.tasks),
               stats: event.stats,
             },
@@ -114,9 +113,6 @@ function reduce(state: State, action: Action): State {
 
         case 'approvals':
           return { ...state, world: { ...world, approvals: event.approvals } };
-
-        case 'islands':
-          return { ...state, world: { ...world, islands: event.islands } };
 
         case 'projects':
           return { ...state, world: { ...world, projects: event.projects } };

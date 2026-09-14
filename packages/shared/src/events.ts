@@ -1,9 +1,8 @@
 import type {
   ActivityEvent,
+  Agent,
   ApprovalRequest,
-  Bot,
   EngineInfo,
-  Island,
   Project,
   Task,
   Timestamp,
@@ -30,17 +29,11 @@ export interface SnapshotEvent {
 export interface TickEvent {
   type: 'tick';
   at: Timestamp;
-  /** Only the bots whose state actually changed. */
-  bots: Bot[];
+  /** Only the agents whose state actually changed. */
+  agents: Agent[];
   /** Only the tasks whose state actually changed. */
   tasks: Task[];
   stats: WorldStats;
-}
-
-export interface IslandsChangedEvent {
-  type: 'islands';
-  at: Timestamp;
-  islands: Island[];
 }
 
 export interface ProjectsChangedEvent {
@@ -78,7 +71,6 @@ export interface HeartbeatEvent {
 export type ServerEvent =
   | SnapshotEvent
   | TickEvent
-  | IslandsChangedEvent
   | ProjectsChangedEvent
   | ApprovalsChangedEvent
   | ActivityEventMessage
@@ -99,7 +91,6 @@ export type ServerEventType = ServerEvent['type'];
 export const SERVER_EVENT_TYPES = [
   'snapshot',
   'tick',
-  'islands',
   'projects',
   'approvals',
   'activity',

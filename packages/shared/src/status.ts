@@ -5,7 +5,7 @@
  * The mock engine drives them today; a real Claude-backed engine drives the
  * same seven tomorrow, and no screen has to change.
  */
-export const BOT_STATUSES = [
+export const AGENT_STATUSES = [
   'idle',
   'working',
   'waiting_approval',
@@ -15,7 +15,7 @@ export const BOT_STATUSES = [
   'cancelled',
 ] as const;
 
-export type BotStatus = (typeof BOT_STATUSES)[number];
+export type AgentStatus = (typeof AGENT_STATUSES)[number];
 
 /**
  * Task status mirrors bot status, plus `backlog` for work nobody has picked up
@@ -34,7 +34,7 @@ export const TASK_STATUSES = [
 
 export type TaskStatus = (typeof TASK_STATUSES)[number];
 
-export const STATUS_LABEL: Record<BotStatus | TaskStatus, string> = {
+export const STATUS_LABEL: Record<AgentStatus | TaskStatus, string> = {
   backlog: 'Backlog',
   idle: 'Idle',
   working: 'Working',
@@ -51,7 +51,7 @@ export const STATUS_LABEL: Record<BotStatus | TaskStatus, string> = {
  * package so server-rendered summaries and the client agree on what "working"
  * looks like.
  */
-export const STATUS_TONE: Record<BotStatus | TaskStatus, string> = {
+export const STATUS_TONE: Record<AgentStatus | TaskStatus, string> = {
   backlog: 'mute',
   idle: 'mute',
   working: 'ok',

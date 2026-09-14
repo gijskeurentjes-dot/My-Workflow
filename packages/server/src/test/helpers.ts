@@ -90,8 +90,15 @@ export function taskByTitle(repos: Repositories, title: string) {
   return task;
 }
 
-export function botByName(repos: Repositories, name: string) {
-  const bot = repos.bots.list().find((b) => b.name === name);
-  if (!bot) throw new Error(`No seeded bot named "${name}"`);
-  return bot;
+export function agentByName(repos: Repositories, name: string) {
+  const agent = repos.agents.list().find((a) => a.name === name);
+  if (!agent) throw new Error(`No seeded agent named "${name}"`);
+  return agent;
+}
+
+/** The project a seeded task belongs to, by the project's name. */
+export function projectByName(repos: Repositories, name: string) {
+  const project = repos.projects.list().find((p) => p.name === name);
+  if (!project) throw new Error(`No seeded project named "${name}"`);
+  return project;
 }

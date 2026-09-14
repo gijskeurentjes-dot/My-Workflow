@@ -24,8 +24,8 @@ of a bot, the web build fails — it cannot drift into a runtime surprise.
 | ---- | -------- |
 | `types.ts` | Domain entities and the DTOs on the wire |
 | `status.ts` | The seven agent states and eight task states, with labels and colour tones |
-| `bots.ts` | The five agent profiles, and which task type each owns |
-| `islands.ts` | Island definitions and the biome palettes, light and dark |
+| `archetypes.ts` | The five archetypes, and which task type each owns |
+| `appearance.ts` | Biome palettes (light and dark) and how a project's island is chosen |
 | `geometry.ts` | Isometric projection, terrain generation, roads, pathfinding |
 | `events.ts` | The Server-Sent Events contract |
 | `derive.ts` | Derivations both sides need, defined once |
@@ -150,6 +150,46 @@ minute does not finish every task at once when it wakes.
 Idle agents pick work off the board on their own (`autoAssign`, on by default),
 which is the mock stand-in for Atlas delegating. A real engine would ask the
 project manager agent to make that call.
+
+---
+
+## The world model
+
+**A project is an island.** It carries its own appearance — biome, terrain seed
+and position on the world map — fixed at creation so an island someone has
+learned to recognise never changes shape underneath them.
+
+**Every project has its own team.** Agents belong to a project, not to the
+world, and the engine only ever offers an agent work from its own project's
+board. Hiring adds one; dismissing puts whatever it held back on the board.
+
+**An agent's archetype is a starting point, not a cage.** It sets the sprite,
+the natural task types and the brief the agent begins with. `role`,
+`instructions` and `tools` are then stored per agent and editable — which is what
+makes the Claude swap meaningful, because `instructions` is literally the system
+prompt a live engine would send.
+
+**A task's kind of work decides where it happens.** `TASK_TYPES` maps each type
+to a building on the island, and the engine walks the agent there. That mapping
+is the single source of truth: the server routes with it, and the world view
+uses it to explain why an agent walked somewhere.
+
+### Migrating to it
+
+The model changed after two milestones had shipped, so migration 3 reshapes
+existing databases in place rather than resetting them: projects gain island
+appearance, `bots` becomes `agents` re-keyed onto projects, and tasks, approvals
+and activity are rebuilt with the new columns.
+
+Reshaping a schema in SQLite means rebuilding tables — create the new shape,
+copy the rows, drop the old, rename — and with foreign keys enforced, a table
+whose parent has already been rebuilt cannot be altered at all. `migrate()`
+therefore turns enforcement off for the duration and runs `foreign_key_check`
+before accepting the result: nothing commits as clean without passing it.
+
+Existing agents belonged to a work area rather than a project, so there was no
+correct project for them. They join the oldest one, and that choice is written
+down in the migration rather than left to be discovered.
 
 ---
 

@@ -13,8 +13,8 @@ export function createApprovalRepository(db: Db): ApprovalRepository {
     "SELECT * FROM approval_requests WHERE task_id = ? AND status = 'pending' ORDER BY requested_at DESC LIMIT 1",
   );
   const insert = db.prepare(`
-    INSERT INTO approval_requests (id, task_id, bot_id, summary, status, requested_at, decided_at, note)
-    VALUES (@id, @task_id, @bot_id, @summary, @status, @requested_at, @decided_at, @note)
+    INSERT INTO approval_requests (id, task_id, agent_id, summary, status, requested_at, decided_at, note)
+    VALUES (@id, @task_id, @agent_id, @summary, @status, @requested_at, @decided_at, @note)
   `);
   const decideStmt = db.prepare(
     'UPDATE approval_requests SET status = ?, decided_at = ?, note = ? WHERE id = ?',
@@ -42,7 +42,7 @@ export function createApprovalRepository(db: Db): ApprovalRepository {
       insert.run({
         id: request.id,
         task_id: request.taskId,
-        bot_id: request.botId,
+        agent_id: request.agentId,
         summary: request.summary,
         status: request.status,
         requested_at: request.requestedAt,

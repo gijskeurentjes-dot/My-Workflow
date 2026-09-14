@@ -137,4 +137,209 @@ export const MIGRATIONS: Migration[] = [
       CREATE INDEX idx_tasks_priority ON tasks(priority);
     `,
   },
+  {
+    id: 3,
+    name: 'projects_are_islands',
+    sql: /* sql */ `
+      -- One project is now one island, and every project has its own team.
+      -- Islands stop being entities: their appearance moves onto the project.
+      ALTER TABLE projects ADD COLUMN description  TEXT    NOT NULL DEFAULT '';
+      ALTER TABLE projects ADD COLUMN biome        TEXT    NOT NULL DEFAULT 'civic';
+      ALTER TABLE projects ADD COLUMN seed         REAL    NOT NULL DEFAULT 1.2;
+      ALTER TABLE projects ADD COLUMN layout_col   INTEGER NOT NULL DEFAULT 0;
+      ALTER TABLE projects ADD COLUMN layout_row   INTEGER NOT NULL DEFAULT 0;
+      ALTER TABLE projects ADD COLUMN crates       INTEGER NOT NULL DEFAULT 0;
+
+      -- 'goal' becomes 'description' to match the platform spec.
+      UPDATE projects SET description = goal WHERE description = '';
+
+      -- Give each existing project a distinct island rather than five identical
+      -- ones. rowid is stable and already orders them by creation.
+      UPDATE projects SET
+        biome = (
+          SELECT value FROM (
+            SELECT 0 AS i, 'civic'   AS value UNION ALL SELECT 1, 'scholar'
+            UNION ALL SELECT 2, 'forge' UNION ALL SELECT 3, 'studio'
+            UNION ALL SELECT 4, 'ledger'
+          ) WHERE i = ((SELECT COUNT(*) FROM projects p2 WHERE p2.rowid < projects.rowid) % 5)
+        ),
+        seed = 1.2 + (((SELECT COUNT(*) FROM projects p2 WHERE p2.rowid < projects.rowid) * 2.7) - 
+               (CAST((((SELECT COUNT(*) FROM projects p2 WHERE p2.rowid < projects.rowid) * 2.7) / 9) AS INTEGER) * 9)),
+        layout_col = (SELECT COUNT(*) FROM projects p2 WHERE p2.rowid < projects.rowid) % 3,
+        layout_row = (SELECT COUNT(*) FROM projects p2 WHERE p2.rowid < projects.rowid) / 3;
+
+      -- Carry delivered crates over from the islands the work was done on.
+      UPDATE projects SET crates = (
+        SELECT COUNT(*) FROM tasks t
+        WHERE t.project_id = projects.id AND t.status = 'completed'
+      );
+
+      -- ── Agents ────────────────────────────────────────────────────────────
+      -- Rebuilt rather than altered: the table is renamed, re-keyed onto
+      -- projects, and its location vocabulary changes at the same time.
+      CREATE TABLE agents (
+        id               TEXT PRIMARY KEY,
+        project_id       TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+        archetype        TEXT NOT NULL,
+        name             TEXT NOT NULL,
+        role             TEXT NOT NULL DEFAULT '',
+        instructions     TEXT NOT NULL DEFAULT '',
+        tools            TEXT NOT NULL DEFAULT '[]',
+        status           TEXT NOT NULL DEFAULT 'idle'
+                           CHECK (status IN ('idle', 'working', 'waiting_approval',
+                                             'completed', 'paused', 'failed', 'cancelled')),
+        current_task_id  TEXT,
+        current_location TEXT NOT NULL DEFAULT 'rest',
+        move_from        TEXT,
+        move_to          TEXT,
+        move_departed    INTEGER,
+        move_arrives     INTEGER,
+        progress         REAL NOT NULL DEFAULT 0,
+        created_at       INTEGER NOT NULL,
+        updated_at       INTEGER NOT NULL
+      );
+
+      -- Existing agents belonged to a work area, not a project, so there is no
+      -- correct project for them. They join the oldest one; other projects
+      -- start empty and you hire into them.
+      INSERT INTO agents (id, project_id, archetype, name, role, instructions, tools,
+                          status, current_task_id, current_location,
+                          move_from, move_to, move_departed, move_arrives,
+                          progress, created_at, updated_at)
+      SELECT
+        b.id,
+        (SELECT id FROM projects ORDER BY created_at, rowid LIMIT 1),
+        CASE b.key
+          WHEN 'atlas'        THEN 'pm'
+          WHEN 'nova'         THEN 'researcher'
+          WHEN 'forge'        THEN 'developer'
+          WHEN 'slidebuilder' THEN 'presenter'
+          WHEN 'excel-expert' THEN 'analyst'
+          ELSE 'pm'
+        END,
+        b.name, b.role, b.instructions, b.tools,
+        b.status, b.task_id,
+        -- The old five plots map onto the new eight.
+        CASE b.location_key
+          WHEN 'workbench' THEN 'hq'
+          WHEN 'approval'  THEN 'hq'
+          WHEN 'depot'     THEN 'depot'
+          WHEN 'gate'      THEN 'gate'
+          ELSE 'rest'
+        END,
+        NULL, NULL, NULL, NULL,
+        b.progress, b.updated_at, b.updated_at
+      FROM bots b
+      WHERE EXISTS (SELECT 1 FROM projects);
+
+      DROP TABLE bots;
+
+      -- ── Tasks ─────────────────────────────────────────────────────────────
+      -- Rebuilt so the foreign key points at agents rather than the dropped
+      -- bots table, and so the island reference goes away for good.
+      CREATE TABLE tasks_new (
+        id                TEXT PRIMARY KEY,
+        project_id        TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+        assigned_agent_id TEXT REFERENCES agents(id) ON DELETE SET NULL,
+        title             TEXT NOT NULL,
+        description       TEXT NOT NULL DEFAULT '',
+        type              TEXT NOT NULL
+                            CHECK (type IN ('planning', 'research', 'coding',
+                                            'writing', 'analysis', 'review')),
+        status            TEXT NOT NULL DEFAULT 'backlog'
+                            CHECK (status IN ('backlog', 'working', 'waiting_approval',
+                                              'delivering', 'completed', 'paused',
+                                              'failed', 'cancelled')),
+        priority          TEXT NOT NULL DEFAULT 'normal'
+                            CHECK (priority IN ('low', 'normal', 'high', 'urgent')),
+        building_key      TEXT NOT NULL DEFAULT 'hq',
+        progress          REAL NOT NULL DEFAULT 0,
+        duration_seconds  INTEGER NOT NULL DEFAULT 120,
+        needs_approval    INTEGER NOT NULL DEFAULT 1,
+        blocker           TEXT,
+        created_at        INTEGER NOT NULL,
+        updated_at        INTEGER NOT NULL,
+        started_at        INTEGER,
+        completed_at      INTEGER
+      );
+
+      INSERT INTO tasks_new (id, project_id, assigned_agent_id, title, description, type,
+                             status, priority, building_key, progress, duration_seconds,
+                             needs_approval, blocker, created_at, updated_at,
+                             started_at, completed_at)
+      SELECT
+        t.id, t.project_id,
+        CASE WHEN t.bot_id IN (SELECT id FROM agents) THEN t.bot_id ELSE NULL END,
+        t.title, t.notes, t.type, t.status, t.priority,
+        CASE t.type
+          WHEN 'research' THEN 'library'
+          WHEN 'coding'   THEN 'workshop'
+          WHEN 'writing'  THEN 'studio'
+          WHEN 'analysis' THEN 'data'
+          ELSE 'hq'
+        END,
+        t.progress, t.duration_seconds, t.needs_approval, t.blocker,
+        t.created_at, t.updated_at, t.started_at, t.completed_at
+      FROM tasks t;
+
+      DROP TABLE tasks;
+      ALTER TABLE tasks_new RENAME TO tasks;
+
+      -- ── Approvals ─────────────────────────────────────────────────────────
+      CREATE TABLE approvals_new (
+        id           TEXT PRIMARY KEY,
+        task_id      TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+        agent_id     TEXT NOT NULL REFERENCES agents(id) ON DELETE CASCADE,
+        summary      TEXT NOT NULL,
+        status       TEXT NOT NULL DEFAULT 'pending'
+                       CHECK (status IN ('pending', 'approved', 'rejected')),
+        requested_at INTEGER NOT NULL,
+        decided_at   INTEGER,
+        note         TEXT
+      );
+
+      -- A request whose agent did not survive the move has nobody to act on it.
+      INSERT INTO approvals_new (id, task_id, agent_id, summary, status,
+                                 requested_at, decided_at, note)
+      SELECT a.id, a.task_id, a.bot_id, a.summary, a.status,
+             a.requested_at, a.decided_at, a.note
+      FROM approval_requests a
+      WHERE a.bot_id IN (SELECT id FROM agents)
+        AND a.task_id IN (SELECT id FROM tasks);
+
+      DROP TABLE approval_requests;
+      ALTER TABLE approvals_new RENAME TO approval_requests;
+
+      -- ── Activity ──────────────────────────────────────────────────────────
+      -- Rebuilt to rename its columns onto the platform vocabulary. History is
+      -- kept: an entry naming an agent that is gone still reads correctly.
+      CREATE TABLE activity_new (
+        id         TEXT PRIMARY KEY,
+        project_id TEXT,
+        agent_id   TEXT,
+        task_id    TEXT,
+        event_type TEXT NOT NULL,
+        message    TEXT NOT NULL,
+        timestamp  INTEGER NOT NULL
+      );
+
+      INSERT INTO activity_new (id, project_id, agent_id, task_id, event_type, message, timestamp)
+      SELECT id, project_id, bot_id, task_id, kind, message, at FROM activity_events;
+
+      DROP TABLE activity_events;
+      ALTER TABLE activity_new RENAME TO activity_events;
+
+      CREATE INDEX idx_activity_ts      ON activity_events(timestamp DESC);
+      CREATE INDEX idx_activity_project ON activity_events(project_id);
+      CREATE INDEX idx_tasks_project    ON tasks(project_id);
+      CREATE INDEX idx_tasks_agent      ON tasks(assigned_agent_id);
+      CREATE INDEX idx_tasks_status     ON tasks(status);
+      CREATE INDEX idx_tasks_priority   ON tasks(priority);
+      CREATE INDEX idx_approvals_status ON approval_requests(status);
+      DROP TABLE IF EXISTS islands;
+
+      CREATE INDEX idx_agents_project ON agents(project_id);
+      CREATE INDEX idx_tasks_building ON tasks(building_key);
+    `,
+  },
 ];

@@ -1,17 +1,17 @@
 import { Link } from 'react-router-dom';
 import {
-  BOT_PROFILES,
+  ARCHETYPES,
   STATUS_LABEL,
   STATUS_TONE,
   type ActivityEvent,
-  type ActivityKind,
-  type BotKey,
-  type BotStatus,
+  type ActivityEventType,
+  type AgentArchetype,
+  type AgentStatus,
   type TaskStatus,
 } from '@ai-islands/shared';
 
 /** A status as a coloured pill. The one place a status becomes a colour. */
-export function StatusPill({ status }: { status: BotStatus | TaskStatus }) {
+export function StatusPill({ status }: { status: AgentStatus | TaskStatus }) {
   return (
     <span className={`pill tone-${STATUS_TONE[status]}`}>
       <i aria-hidden="true" />
@@ -20,8 +20,8 @@ export function StatusPill({ status }: { status: BotStatus | TaskStatus }) {
   );
 }
 
-export function Avatar({ botKey, size = 38 }: { botKey: BotKey; size?: number }) {
-  const profile = BOT_PROFILES[botKey];
+export function Avatar({ archetype, size = 38 }: { archetype: AgentArchetype; size?: number }) {
+  const profile = ARCHETYPES[archetype];
   return (
     <div
       className="avatar"
@@ -96,6 +96,8 @@ export function timeAgo(timestamp: number, now: number = Date.now()): string {
 
 const LOG_STYLE: Record<string, { tone: string; icon: string }> = {
   delivered: { tone: 'violet', icon: '\u{1F4E6}' },
+  hired: { tone: 'ok', icon: '\u{1F916}' },
+  dismissed: { tone: 'mute', icon: '\u{1F44B}' },
   approval_requested: { tone: 'warn', icon: '✋' },
   approved: { tone: 'ok', icon: '✓' },
   rejected: { tone: 'warn', icon: '↩' },
@@ -113,7 +115,7 @@ const LOG_STYLE: Record<string, { tone: string; icon: string }> = {
   system: { tone: 'mute', icon: '⚙' },
 };
 
-export const logStyle = (kind: ActivityKind) => LOG_STYLE[kind] ?? LOG_STYLE.system!;
+export const logStyle = (eventType: ActivityEventType) => LOG_STYLE[eventType] ?? LOG_STYLE.system!;
 
 export function ActivityFeed({
   events,
@@ -137,7 +139,7 @@ export function ActivityFeed({
   return (
     <ul className="feed" style={{ listStyle: 'none', margin: 0, padding: 0 }}>
       {events.map((event) => {
-        const style = logStyle(event.kind);
+        const style = logStyle(event.eventType);
         return (
           <li className="feed-row" key={event.id}>
             <span
@@ -150,7 +152,9 @@ export function ActivityFeed({
             <span style={{ minWidth: 0 }}>
               <span className="feed-text">{event.message}</span>
               <span className="feed-time" style={{ display: 'block' }}>
-                <time dateTime={new Date(event.at).toISOString()}>{timeAgo(event.at, now)}</time>
+                <time dateTime={new Date(event.timestamp).toISOString()}>
+                  {timeAgo(event.timestamp, now)}
+                </time>
               </span>
             </span>
           </li>
@@ -176,9 +180,9 @@ export function SimulatedNotice({ compact = false }: { compact?: boolean }) {
   );
 }
 
-export function BotLink({ botId, children }: { botId: string; children: React.ReactNode }) {
+export function AgentLink({ agentId, children }: { agentId: string; children: React.ReactNode }) {
   return (
-    <Link to={`/bots/${botId}`} style={{ textDecoration: 'none', color: 'inherit' }}>
+    <Link to={`/agents/${agentId}`} style={{ textDecoration: 'none', color: 'inherit' }}>
       {children}
     </Link>
   );

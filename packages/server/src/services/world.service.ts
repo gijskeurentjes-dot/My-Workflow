@@ -1,14 +1,15 @@
 import {
-  BOT_PROFILES,
+  ARCHETYPES,
   TASK_TYPES,
-  describeBot,
+  describeAgent,
   movementState,
   type ActivityEvent,
+  type Agent,
+  type AgentView,
   type ApprovalView,
-  type Bot,
-  type BotView,
   type EngineInfo,
   type Id,
+  type Project,
   type Task,
   type TaskView,
   type WorldSnapshot,
@@ -21,8 +22,8 @@ import type { AgentEngine } from './agents/agent-engine.js';
  * The read side of the world.
  *
  * Routes ask this for shaped data rather than reaching into repositories, so
- * "what a bot looks like to the UI" is defined once. Every join the client
- * would otherwise do — bot to profile, task to project — is done here.
+ * "what an agent looks like to the UI" is defined once. Every join the client
+ * would otherwise do — agent to archetype, task to project — is done here.
  */
 export class WorldService {
   constructor(
@@ -33,21 +34,17 @@ export class WorldService {
 
   /** Everything needed to render the app, in one payload. */
   snapshot(): WorldSnapshot {
-    const islands = this.repos.islands.list();
-    const bots = this.repos.bots.list();
     const projects = this.repos.projects.list();
+    const agents = this.repos.agents.list();
     const tasks = this.repos.tasks.list();
-    const approvals = this.repos.approvals.list();
-    const activity = this.repos.activity.list({ limit: this.activityLimit });
 
     return {
-      islands,
-      bots,
       projects,
+      agents,
       tasks,
-      approvals,
-      activity,
-      stats: this.statsFrom(bots, tasks, projects, islands.length),
+      approvals: this.repos.approvals.list(),
+      activity: this.repos.activity.list({ limit: this.activityLimit }),
+      stats: this.statsFrom(agents, tasks, projects),
       serverTime: Date.now(),
       engine: this.engineInfo(),
     };
@@ -55,25 +52,18 @@ export class WorldService {
 
   stats(): WorldStats {
     return this.statsFrom(
-      this.repos.bots.list(),
+      this.repos.agents.list(),
       this.repos.tasks.list(),
       this.repos.projects.list(),
-      this.repos.islands.list().length,
     );
   }
 
-  private statsFrom(
-    bots: Bot[],
-    tasks: Task[],
-    projects: { status: string }[],
-    islandCount: number,
-  ): WorldStats {
+  private statsFrom(agents: Agent[], tasks: Task[], projects: Project[]): WorldStats {
     return {
-      islands: islandCount,
-      bots: bots.length,
-      botsWorking: bots.filter((b) => b.status === 'working').length,
-      botsIdle: bots.filter((b) => b.status === 'idle').length,
       projects: projects.filter((p) => p.status === 'active').length,
+      agents: agents.length,
+      agentsWorking: agents.filter((a) => a.status === 'working').length,
+      agentsIdle: agents.filter((a) => a.status === 'idle').length,
       tasksOpen: tasks.filter((t) => t.status !== 'completed' && t.status !== 'cancelled').length,
       tasksCompleted: tasks.filter((t) => t.status === 'completed').length,
       approvalsPending: this.repos.approvals.list({ status: 'pending' }).length,
@@ -84,33 +74,36 @@ export class WorldService {
     return this.engine.info();
   }
 
-  // ── Bots ──────────────────────────────────────────────────────────────────
+  // ── Agents ────────────────────────────────────────────────────────────────
 
-  listBotViews(): BotView[] {
-    return this.repos.bots.list().map((bot) => this.toBotView(bot));
+  listAgentViews(projectId?: Id): AgentView[] {
+    const agents = projectId
+      ? this.repos.agents.findByProject(projectId)
+      : this.repos.agents.list();
+    return agents.map((agent) => this.toAgentView(agent));
   }
 
-  findBotView(id: Id): BotView | null {
-    const bot = this.repos.bots.findById(id);
-    return bot ? this.toBotView(bot) : null;
+  findAgentView(id: Id): AgentView | null {
+    const agent = this.repos.agents.findById(id);
+    return agent ? this.toAgentView(agent) : null;
   }
 
-  private toBotView(bot: Bot): BotView {
-    const island = this.repos.islands.findById(bot.islandId);
-    if (!island) throw new Error(`Bot ${bot.id} references a missing island`);
-    const task = bot.taskId ? this.repos.tasks.findById(bot.taskId) : null;
+  private toAgentView(agent: Agent): AgentView {
+    const project = this.repos.projects.findById(agent.projectId);
+    if (!project) throw new Error(`Agent ${agent.id} references a missing project`);
+    const task = agent.currentTaskId ? this.repos.tasks.findById(agent.currentTaskId) : null;
 
-    // Rotating the thought line off the clock keeps a working bot from looking
-    // frozen, without storing a counter that would churn the database.
+    // Rotating the thought line off the clock keeps a working agent from
+    // looking frozen, without storing a counter that would churn the database.
     const thoughtIndex = Math.floor(Date.now() / 6000);
 
     return {
-      ...bot,
-      profile: BOT_PROFILES[bot.key],
-      island,
+      ...agent,
+      profile: ARCHETYPES[agent.archetype],
+      project,
       task,
-      movementState: movementState(bot),
-      doing: describeBot(bot, task, thoughtIndex),
+      movementState: movementState(agent),
+      doing: describeAgent(agent, task, thoughtIndex),
     };
   }
 
@@ -127,15 +120,13 @@ export class WorldService {
 
   private toTaskView(task: Task): TaskView {
     const project = this.repos.projects.findById(task.projectId);
-    const island = this.repos.islands.findById(task.islandId);
-    if (!project || !island) throw new Error(`Task ${task.id} references missing rows`);
-    const bot = task.botId ? this.repos.bots.findById(task.botId) : null;
+    if (!project) throw new Error(`Task ${task.id} references a missing project`);
+    const agent = task.assignedAgentId ? this.repos.agents.findById(task.assignedAgentId) : null;
 
     return {
       ...task,
       project: { id: project.id, name: project.name, color: project.color },
-      island: { id: island.id, key: island.key, name: island.name },
-      bot: bot ? { id: bot.id, key: bot.key, name: bot.name } : null,
+      agent: agent ? { id: agent.id, archetype: agent.archetype, name: agent.name } : null,
       typeInfo: TASK_TYPES[task.type],
     };
   }
@@ -147,20 +138,20 @@ export class WorldService {
       .list(status ? { status } : undefined)
       .map((request) => {
         const task = this.repos.tasks.findById(request.taskId);
-        const bot = this.repos.bots.findById(request.botId);
-        if (!task || !bot) return null;
+        const agent = this.repos.agents.findById(request.agentId);
+        if (!task || !agent) return null;
         const project = this.repos.projects.findById(task.projectId);
         if (!project) return null;
 
         return {
           ...request,
           task: { id: task.id, title: task.title, type: task.type, projectId: task.projectId },
-          bot: { id: bot.id, key: bot.key, name: bot.name },
+          agent: { id: agent.id, archetype: agent.archetype, name: agent.name },
           project: { id: project.id, name: project.name, color: project.color },
         } satisfies ApprovalView;
       })
-      // A request whose task or bot has been deleted is history, not a row the
-      // approval queue can act on.
+      // A request whose task or agent has been deleted is history, not a row
+      // the approval queue can act on.
       .filter((v): v is ApprovalView => v !== null);
   }
 

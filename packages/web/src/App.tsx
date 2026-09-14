@@ -2,9 +2,8 @@ import type { ReactNode } from 'react';
 import { NavLink, Navigate, Route, Routes } from 'react-router-dom';
 import { Activity } from './screens/Activity.js';
 import { Approvals } from './screens/Approvals.js';
-import { BotDetail } from './screens/BotDetail.js';
-import { Bots } from './screens/Bots.js';
-import { IslandDetail } from './screens/IslandDetail.js';
+import { AgentDetail } from './screens/AgentDetail.js';
+import { Agents } from './screens/Agents.js';
 import { ProjectDetail } from './screens/ProjectDetail.js';
 import { Projects } from './screens/Projects.js';
 import { Settings } from './screens/Settings.js';
@@ -17,7 +16,7 @@ const NAV = [
   { to: '/', icon: '🏝️', label: 'Workspace', end: true },
   { to: '/projects', icon: '🗂️', label: 'Projects' },
   { to: '/tasks', icon: '📋', label: 'Tasks' },
-  { to: '/bots', icon: '🤖', label: 'The team' },
+  { to: '/agents', icon: '🤖', label: 'Agents' },
   { to: '/approvals', icon: '✋', label: 'Approvals' },
   { to: '/activity', icon: '📜', label: 'Activity' },
   { to: '/settings', icon: '⚙️', label: 'Settings' },
@@ -69,7 +68,7 @@ export function App() {
   const counts: Record<string, number> = {
     '/projects': world?.projects.length ?? 0,
     '/tasks': world?.stats.tasksOpen ?? 0,
-    '/bots': world?.bots.length ?? 0,
+    '/agents': world?.agents.length ?? 0,
     '/approvals': pendingApprovals,
   };
 
@@ -112,12 +111,11 @@ export function App() {
           <WorldGate>
             <Routes>
               <Route path="/" element={<Workspace />} />
-              <Route path="/islands/:islandId" element={<IslandDetail />} />
               <Route path="/projects" element={<Projects />} />
               <Route path="/projects/:projectId" element={<ProjectDetail />} />
               <Route path="/tasks" element={<TaskBoard />} />
-              <Route path="/bots" element={<Bots />} />
-              <Route path="/bots/:botId" element={<BotDetail />} />
+              <Route path="/agents" element={<Agents />} />
+              <Route path="/agents/:agentId" element={<AgentDetail />} />
               <Route path="/approvals" element={<Approvals />} />
               <Route path="/activity" element={<Activity />} />
               <Route path="/settings" element={<Settings />} />

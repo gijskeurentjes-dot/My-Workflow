@@ -50,51 +50,85 @@ export const cellKey = (c: number, r: number): string => `${c}:${r}`;
 // ─────────────────────────────────────────────────────────────────────────────
 
 export const PLOTS: Record<PlotKey, PlotInfo> = {
-  workbench: {
-    key: 'workbench',
-    label: 'Workbench',
-    icon: '\u{1F3E0}',
-    purpose: 'Where the island’s agent actually does the work it was given.',
-    cell: { c: 8, r: 6 },
+  hq: {
+    key: 'hq',
+    label: 'Headquarters',
+    icon: '\u{1F3E2}',
+    purpose:
+      'Coordination, planning and review. Finished work is brought here for your approval.',
+    cell: { c: 8, r: 5 },
   },
-  approval: {
-    key: 'approval',
-    label: 'Approval Post',
-    icon: '✋',
-    purpose: 'Finished work waits here until you approve it or send it back.',
-    cell: { c: 11, r: 9 },
+  library: {
+    key: 'library',
+    label: 'Research Library',
+    icon: '\u{1F4DA}',
+    purpose: 'Sources, reading and written research reports.',
+    cell: { c: 4, r: 7 },
+  },
+  workshop: {
+    key: 'workshop',
+    label: 'Workshop',
+    icon: '\u{1F6E0}\uFE0F',
+    purpose: 'Code, builds, tests and technical deliverables.',
+    cell: { c: 12, r: 7 },
+  },
+  rest: {
+    key: 'rest',
+    label: 'Meeting Circle',
+    icon: '\u{1F525}',
+    purpose: 'Where agents wait and hand off work between jobs.',
+    cell: { c: 8, r: 8 },
+  },
+  studio: {
+    key: 'studio',
+    label: 'Presentation Studio',
+    icon: '\u{1F4FD}\uFE0F',
+    purpose: 'Slide decks, storylines, charts and speaker notes.',
+    cell: { c: 4, r: 11 },
+  },
+  data: {
+    key: 'data',
+    label: 'Data Workshop',
+    icon: '\u{1F9EE}',
+    purpose: 'Workbooks, formulas, models and dashboards.',
+    cell: { c: 12, r: 11 },
+  },
+  gate: {
+    key: 'gate',
+    label: 'Gate',
+    icon: '\u26E9\uFE0F',
+    purpose: 'The way on and off the island.',
+    cell: { c: 6, r: 13 },
   },
   depot: {
     key: 'depot',
     label: 'Delivery Depot',
     icon: '\u{1F4E6}',
     purpose: 'Approved work, crated and logged. One crate per delivery.',
-    cell: { c: 5, r: 12 },
-  },
-  rest: {
-    key: 'rest',
-    label: 'Rest Point',
-    icon: '\u{1F525}',
-    purpose: 'Where an agent waits between jobs.',
-    cell: { c: 5, r: 9 },
-  },
-  gate: {
-    key: 'gate',
-    label: 'Gate',
-    icon: '⛩️',
-    purpose: 'The way on and off the island.',
-    cell: { c: 8, r: 12 },
+    cell: { c: 10, r: 13 },
   },
 };
 
+/** Finished work is brought to headquarters for your decision. */
+export const APPROVAL_PLOT: PlotKey = 'hq';
+
+/** Approved work is carried to the depot, and arriving there completes it. */
+export const DELIVERY_PLOT: PlotKey = 'depot';
+
+/** Where an agent waits when it has nothing to do. */
+export const REST_PLOT: PlotKey = 'rest';
+
 export const PLOT_KEYS = Object.keys(PLOTS) as PlotKey[];
 
-/** Walkable tiles: a main street, one cross street and the depot lane. */
+/** Walkable tiles: a main street, two cross streets and the depot lane. */
 export const ROADS: ReadonlySet<string> = (() => {
   const s = new Set<string>();
-  for (let r = 6; r <= 12; r++) s.add(cellKey(8, r)); // main street
-  for (let c = 5; c <= 11; c++) s.add(cellKey(c, 9)); // cross street
-  for (let c = 5; c <= 8; c++) s.add(cellKey(c, 12)); // depot lane
+  for (let r = 5; r <= 13; r++) s.add(cellKey(8, r)); // main street
+  for (let c = 4; c <= 12; c++) {
+    s.add(cellKey(c, 7)); // upper cross street
+    s.add(cellKey(c, 11)); // lower cross street
+  }
+  for (let c = 6; c <= 10; c++) s.add(cellKey(c, 13)); // depot lane
   for (const p of Object.values(PLOTS)) s.add(cellKey(p.cell.c, p.cell.r));
   return s;
 })();

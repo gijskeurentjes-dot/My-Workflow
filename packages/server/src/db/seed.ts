@@ -1,13 +1,14 @@
 import {
-  BOT_PROFILES,
-  ISLAND_DEFS,
+  ARCHETYPES,
+  DEMO_PROJECTS,
   TASK_TYPES,
+  appearanceForIndex,
+  defaultInstructions,
+  homePlotFor,
   type ActivityEvent,
-  type ActivityKind,
-  type Bot,
-  type BotKey,
-  type Island,
-  type IslandKey,
+  type ActivityEventType,
+  type Agent,
+  type AgentArchetype,
   type Project,
   type Task,
   type TaskPriority,
@@ -17,77 +18,82 @@ import { newId } from '../ids.js';
 import type { Repositories } from '../repositories/types.js';
 
 /**
- * The demo world.
+ * The demo world: three projects, each its own island with its own team.
  *
- * It is written to show every state at a glance: someone working, someone
- * waiting on you, someone blocked, someone paused and someone idle. The
- * "reset demo data" action replays exactly this.
+ * It is written to show every state at a glance — someone working, someone
+ * waiting on you, someone blocked, someone paused and someone idle — and to
+ * show teams of different shapes, because a project decides who it hires.
  */
 
 const MINUTE = 60_000;
 const HOUR = 60 * MINUTE;
 
+interface SeedAgent {
+  key: string;
+  project: string;
+  archetype: AgentArchetype;
+  /** Override the archetype's default name, so teams do not all look alike. */
+  name?: string;
+}
+
 interface SeedTask {
   key: string;
   project: string;
   title: string;
-  notes: string;
+  description: string;
   type: TaskType;
   status: Task['status'];
   priority?: TaskPriority;
-  bot: BotKey | null;
+  agent: string | null;
   progress?: number;
   durationSeconds?: number;
   needsApproval?: boolean;
   blocker?: string;
-  /** How long ago it was completed, in ms. Only for completed tasks. */
   completedAgo?: number;
 }
 
-const SEED_PROJECTS: { key: string; name: string; goal: string; color: string }[] = [
-  {
-    key: 'launch',
-    name: 'Q4 Product Launch',
-    goal: 'Ship the new pricing page and launch deck before the quarter closes.',
-    color: '#f4834f',
-  },
-  {
-    key: 'research',
-    name: 'Market Research Refresh',
-    goal: 'Understand where we sit against the three closest competitors.',
-    color: '#7a63d8',
-  },
-  {
-    key: 'budget',
-    name: 'FY26 Budget',
-    goal: 'Build a defensible baseline and a lean scenario.',
-    color: '#3aa85f',
-  },
+/** Project keys, in the order they are created. */
+const LAUNCH = 'launch';
+const RESEARCH = 'research';
+const BUDGET = 'budget';
+
+const SEED_AGENTS: SeedAgent[] = [
+  // A launch needs coordination, building and a deck: three specialists.
+  { key: 'atlas', project: LAUNCH, archetype: 'pm' },
+  { key: 'forge', project: LAUNCH, archetype: 'developer' },
+  { key: 'slides', project: LAUNCH, archetype: 'presenter' },
+
+  // Research is a smaller team.
+  { key: 'nova', project: RESEARCH, archetype: 'researcher' },
+  { key: 'cortex', project: RESEARCH, archetype: 'pm', name: 'Cortex' },
+
+  // And the budget is mostly one analyst with someone to present it.
+  { key: 'excel', project: BUDGET, archetype: 'analyst' },
+  { key: 'quill', project: BUDGET, archetype: 'presenter', name: 'Quill' },
 ];
 
 const SEED_TASKS: SeedTask[] = [
   // ── Someone is working ────────────────────────────────────────────────────
   {
     key: 'breakdown',
-    project: 'launch',
+    project: LAUNCH,
     title: 'Break the launch into workstreams',
-    notes: 'Sequence the pricing page, the deck and the revenue model.',
+    description: 'Sequence the pricing page, the deck and the revenue model.',
     type: 'planning',
     status: 'working',
     priority: 'high',
-    bot: 'atlas',
+    agent: 'atlas',
     progress: 44,
     durationSeconds: 150,
   },
   {
     key: 'revenue-model',
-    project: 'budget',
+    project: BUDGET,
     title: 'Q4 revenue model',
-    notes: 'Base, upside and downside cases with the assumptions labelled.',
+    description: 'Base, upside and downside cases with the assumptions labelled.',
     type: 'analysis',
     status: 'working',
-    priority: 'normal',
-    bot: 'excel-expert',
+    agent: 'excel',
     progress: 27,
     durationSeconds: 135,
   },
@@ -95,13 +101,13 @@ const SEED_TASKS: SeedTask[] = [
   // ── Someone needs you ─────────────────────────────────────────────────────
   {
     key: 'competitors',
-    project: 'research',
+    project: RESEARCH,
     title: 'Competitor landscape scan',
-    notes: 'Pricing tiers, positioning and recent launches for the top three.',
+    description: 'Pricing tiers, positioning and recent launches for the top three.',
     type: 'research',
     status: 'waiting_approval',
     priority: 'high',
-    bot: 'nova',
+    agent: 'nova',
     progress: 100,
     durationSeconds: 120,
   },
@@ -109,13 +115,13 @@ const SEED_TASKS: SeedTask[] = [
   // ── Someone is blocked ────────────────────────────────────────────────────
   {
     key: 'checkout',
-    project: 'launch',
+    project: LAUNCH,
     title: 'Fix the checkout regression',
-    notes: 'Card payments fail on the annual plan after the pricing change.',
+    description: 'Card payments fail on the annual plan after the pricing change.',
     type: 'coding',
     status: 'failed',
     priority: 'urgent',
-    bot: 'forge',
+    agent: 'forge',
     progress: 38,
     durationSeconds: 130,
     blocker: 'The staging payment gateway is rejecting test cards — needs a credential from you.',
@@ -124,13 +130,12 @@ const SEED_TASKS: SeedTask[] = [
   // ── Someone is paused ─────────────────────────────────────────────────────
   {
     key: 'launch-deck',
-    project: 'launch',
+    project: LAUNCH,
     title: 'Launch deck: storyline and slides',
-    notes: 'Twelve slides, speaker notes, one chart per claim.',
+    description: 'Twelve slides, speaker notes, one chart per claim.',
     type: 'writing',
     status: 'paused',
-    priority: 'normal',
-    bot: 'slidebuilder',
+    agent: 'slides',
     progress: 61,
     durationSeconds: 140,
   },
@@ -138,89 +143,81 @@ const SEED_TASKS: SeedTask[] = [
   // ── Waiting on the board ──────────────────────────────────────────────────
   {
     key: 'pricing-page',
-    project: 'launch',
+    project: LAUNCH,
     title: 'Build the new pricing page',
-    notes: 'Three tiers, annual toggle, and the comparison table.',
+    description: 'Three tiers, annual toggle, and the comparison table.',
     type: 'coding',
     status: 'backlog',
     priority: 'urgent',
-    bot: null,
+    agent: null,
   },
   {
     key: 'interviews',
-    project: 'research',
+    project: RESEARCH,
     title: 'Summarise the customer interviews',
-    notes: 'Nine transcripts. Pull the themes and the direct quotes.',
+    description: 'Nine transcripts. Pull the themes and the direct quotes.',
     type: 'research',
     status: 'backlog',
-    priority: 'normal',
-    bot: null,
+    agent: null,
   },
   {
     key: 'budget-deck',
-    project: 'budget',
+    project: BUDGET,
     title: 'Budget review deck',
-    notes: 'One slide per cost centre with the variance called out.',
+    description: 'One slide per cost centre with the variance called out.',
     type: 'writing',
     status: 'backlog',
     priority: 'low',
-    bot: null,
+    agent: null,
   },
   {
     key: 'launch-review',
-    project: 'launch',
+    project: LAUNCH,
     title: 'Review the launch checklist',
-    notes: 'Everything that has to be true before we announce.',
+    description: 'Everything that has to be true before we announce.',
     type: 'review',
     status: 'backlog',
     priority: 'high',
-    bot: null,
+    agent: null,
   },
 
   // ── Already delivered ─────────────────────────────────────────────────────
   {
     key: 'source-library',
-    project: 'research',
+    project: RESEARCH,
     title: 'Build the source library',
-    notes: 'Every source tagged, de-duplicated and dated.',
+    description: 'Every source tagged, de-duplicated and dated.',
     type: 'research',
     status: 'completed',
-    bot: 'nova',
+    agent: 'nova',
     progress: 100,
     completedAgo: 5 * HOUR,
   },
   {
     key: 'cost-baseline',
-    project: 'budget',
+    project: BUDGET,
     title: 'FY25 cost baseline',
-    notes: 'Actuals by cost centre, reconciled to the ledger.',
+    description: 'Actuals by cost centre, reconciled to the ledger.',
     type: 'analysis',
     status: 'completed',
-    bot: 'excel-expert',
+    agent: 'excel',
     progress: 100,
     completedAgo: 20 * HOUR,
   },
 ];
 
-/** Where a bot stands, given what it is doing. */
-function plotForStatus(status: Bot['status']): Bot['locationKey'] {
-  switch (status) {
-    case 'working':
-    case 'failed':
-      return 'workbench';
-    case 'waiting_approval':
-      return 'approval';
-    case 'paused':
-      return 'workbench';
-    default:
-      return 'rest';
+/** Where an agent stands, given what it is doing. */
+function locationFor(status: Agent['status'], archetype: AgentArchetype, task?: SeedTask): Agent['currentLocation'] {
+  if (status === 'waiting_approval') return 'hq';
+  if ((status === 'working' || status === 'failed' || status === 'paused') && task) {
+    return TASK_TYPES[task.type].building;
   }
+  return homePlotFor(archetype);
 }
 
 export interface SeedResult {
-  islands: Island[];
-  bots: Bot[];
   projects: Project[];
+  agents: Agent[];
   tasks: Task[];
 }
 
@@ -230,141 +227,124 @@ export interface SeedResult {
  */
 export function seedWorld(repos: Repositories, now: number = Date.now()): SeedResult {
   return repos.transaction(() => {
-    // ── Islands ─────────────────────────────────────────────────────────────
-    const islandByKey = new Map<IslandKey, Island>();
-    for (const def of ISLAND_DEFS) {
-      const island = repos.islands.create({
-        id: newId('isl'),
-        key: def.key,
-        name: def.name,
-        blurb: def.blurb,
-        biome: def.biome,
-        seed: def.seed,
-        layout: def.layout,
-        crates: 0,
-        createdAt: now,
-      });
-      islandByKey.set(def.key, island);
-    }
-
     // ── Projects ────────────────────────────────────────────────────────────
     const projectByKey = new Map<string, Project>();
-    for (const p of SEED_PROJECTS) {
+    const keys = [LAUNCH, RESEARCH, BUDGET];
+
+    DEMO_PROJECTS.forEach((definition, index) => {
       const project = repos.projects.create({
         id: newId('prj'),
-        name: p.name,
-        goal: p.goal,
+        name: definition.name,
+        description: definition.description,
         status: 'active',
-        color: p.color,
+        color: definition.color,
+        appearance: appearanceForIndex(index),
+        crates: 0,
         createdAt: now - 2 * HOUR,
         updatedAt: now,
       });
-      projectByKey.set(p.key, project);
-    }
+      projectByKey.set(keys[index]!, project);
+    });
 
-    // ── Bots ────────────────────────────────────────────────────────────────
-    // Status is decided by the task each bot is holding, so the two can never
-    // disagree. Bots with no seeded task start idle at the rest point.
-    const statusByBot = new Map<BotKey, Bot['status']>();
+    // ── Agents ──────────────────────────────────────────────────────────────
+    // Status is decided by the task each agent holds, so the two can never
+    // disagree. Agents with no seeded task start idle at their home building.
+    const taskByAgentKey = new Map<string, SeedTask>();
     for (const t of SEED_TASKS) {
-      if (!t.bot) continue;
-      if (t.status === 'working') statusByBot.set(t.bot, 'working');
-      else if (t.status === 'waiting_approval') statusByBot.set(t.bot, 'waiting_approval');
-      else if (t.status === 'failed') statusByBot.set(t.bot, 'failed');
-      else if (t.status === 'paused') statusByBot.set(t.bot, 'paused');
+      if (!t.agent || t.status === 'completed') continue;
+      taskByAgentKey.set(t.agent, t);
     }
 
-    const botByKey = new Map<BotKey, Bot>();
-    for (const profile of Object.values(BOT_PROFILES)) {
-      const island = islandByKey.get(profile.homeIsland);
-      if (!island) throw new Error(`Seed: no island for ${profile.homeIsland}`);
+    const agentByKey = new Map<string, Agent>();
+    for (const definition of SEED_AGENTS) {
+      const project = projectByKey.get(definition.project);
+      if (!project) throw new Error(`Seed: no project for agent ${definition.key}`);
 
-      const status = statusByBot.get(profile.key) ?? 'idle';
-      const bot = repos.bots.create({
-        id: newId('bot'),
-        key: profile.key,
-        name: profile.name,
-        islandId: island.id,
+      const profile = ARCHETYPES[definition.archetype];
+      const heldTask = taskByAgentKey.get(definition.key);
+      const status: Agent['status'] = heldTask
+        ? heldTask.status === 'working'
+          ? 'working'
+          : heldTask.status === 'waiting_approval'
+            ? 'waiting_approval'
+            : heldTask.status === 'failed'
+              ? 'failed'
+              : heldTask.status === 'paused'
+                ? 'paused'
+                : 'idle'
+        : 'idle';
+
+      const agent = repos.agents.create({
+        id: newId('agt'),
+        projectId: project.id,
+        archetype: definition.archetype,
+        name: definition.name ?? profile.defaultName,
         role: profile.title,
-        // The brief a real engine would send as this agent's system prompt.
-        instructions: [
-          profile.tagline,
-          '',
-          'Responsibilities:',
-          ...profile.responsibilities.map((r) => `- ${r}`),
-          '',
-          'Always check with the user before:',
-          ...profile.approvalRules.map((r) => `- ${r}`),
-        ].join('\n'),
+        instructions: defaultInstructions(profile),
         tools: [...profile.tools],
         status,
-        taskId: null, // linked below, once the tasks exist
-        locationKey: plotForStatus(status),
+        currentTaskId: null, // linked below, once the tasks exist
+        currentLocation: locationFor(status, definition.archetype, heldTask),
         movement: null,
         progress: 0,
+        createdAt: now - 2 * HOUR,
         updatedAt: now,
       });
-      botByKey.set(profile.key, bot);
+      agentByKey.set(definition.key, agent);
     }
 
     // ── Tasks ───────────────────────────────────────────────────────────────
-    const tasks: Task[] = [];
     const taskByKey = new Map<string, Task>();
 
     for (const t of SEED_TASKS) {
       const project = projectByKey.get(t.project);
-      const island = islandByKey.get(TASK_TYPES[t.type].island);
-      if (!project || !island) throw new Error(`Seed: bad task ${t.key}`);
+      if (!project) throw new Error(`Seed: bad task ${t.key}`);
 
-      const bot = t.bot ? botByKey.get(t.bot) : null;
+      const agent = t.agent ? agentByKey.get(t.agent) : null;
       const progress = t.progress ?? 0;
-      const started = t.status === 'backlog' ? null : now - 30 * MINUTE;
 
       const task = repos.tasks.create({
         id: newId('tsk'),
         projectId: project.id,
+        assignedAgentId: agent?.id ?? null,
         title: t.title,
-        notes: t.notes,
+        description: t.description,
         type: t.type,
         status: t.status,
         priority: t.priority ?? 'normal',
-        islandId: island.id,
-        botId: bot?.id ?? null,
+        buildingKey: TASK_TYPES[t.type].building,
         progress,
         durationSeconds: t.durationSeconds ?? 120,
         needsApproval: t.needsApproval ?? true,
         blocker: t.blocker ?? null,
         createdAt: now - 3 * HOUR,
         updatedAt: now,
-        startedAt: started,
+        startedAt: t.status === 'backlog' ? null : now - 30 * MINUTE,
         completedAt: t.completedAgo ? now - t.completedAgo : null,
       });
-      tasks.push(task);
       taskByKey.set(t.key, task);
 
-      // A bot only holds a task that is still live. Completed work is history.
-      if (bot && t.status !== 'completed') {
-        repos.bots.update(bot.id, { taskId: task.id, progress });
-        botByKey.set(bot.key, { ...bot, taskId: task.id, progress });
+      // An agent only holds a task that is still live. Completed work is history.
+      if (agent && t.status !== 'completed') {
+        repos.agents.update(agent.id, { currentTaskId: task.id, progress, updatedAt: now });
+        agentByKey.set(t.agent!, { ...agent, currentTaskId: task.id, progress });
       }
 
-      // Delivered work is crated at the island it was done on.
-      if (t.status === 'completed') {
-        repos.islands.addCrate(island.id);
-      }
+      // Delivered work is crated at the project it belongs to.
+      if (t.status === 'completed') repos.projects.addCrate(project.id);
     }
 
     // ── The approval that is already waiting for you ────────────────────────
     const waiting = SEED_TASKS.find((t) => t.status === 'waiting_approval');
-    if (waiting && waiting.bot) {
+    if (waiting?.agent) {
       const task = taskByKey.get(waiting.key);
-      const bot = botByKey.get(waiting.bot);
-      if (task && bot) {
+      const agent = agentByKey.get(waiting.agent);
+      if (task && agent) {
         repos.approvals.create({
           id: newId('apr'),
           taskId: task.id,
-          botId: bot.id,
-          summary: `${bot.name} finished “${task.title}” and needs your sign-off before it is delivered.`,
+          agentId: agent.id,
+          summary: `${agent.name} finished “${task.title}” and needs your sign-off before it is delivered.`,
           status: 'pending',
           requestedAt: now - 12 * MINUTE,
           decidedAt: null,
@@ -374,13 +354,13 @@ export function seedWorld(repos: Repositories, now: number = Date.now()): SeedRe
     }
 
     // ── A little history, so the log is not empty on first load ─────────────
-    const history: { kind: ActivityKind; message: string; task: string; ago: number }[] = [
-      { kind: 'delivered', message: 'Nova delivered “Build the source library” to the depot', task: 'source-library', ago: 5 * HOUR },
-      { kind: 'delivered', message: 'Excel Expert delivered “FY25 cost baseline” to the depot', task: 'cost-baseline', ago: 20 * HOUR },
-      { kind: 'blocked', message: 'Forge reported a blocker on “Fix the checkout regression”', task: 'checkout', ago: 38 * MINUTE },
-      { kind: 'approval_requested', message: 'Nova finished “Competitor landscape scan” and is waiting for your approval', task: 'competitors', ago: 12 * MINUTE },
-      { kind: 'paused', message: 'Launch deck was paused at 61% — progress held', task: 'launch-deck', ago: 26 * MINUTE },
-      { kind: 'started', message: 'Atlas started “Break the launch into workstreams”', task: 'breakdown', ago: 22 * MINUTE },
+    const history: { eventType: ActivityEventType; message: string; task: string; ago: number }[] = [
+      { eventType: 'delivered', message: 'Nova delivered “Build the source library” to the Delivery Depot', task: 'source-library', ago: 5 * HOUR },
+      { eventType: 'delivered', message: 'Excel Expert delivered “FY25 cost baseline” to the Delivery Depot', task: 'cost-baseline', ago: 20 * HOUR },
+      { eventType: 'blocked', message: 'Forge reported a blocker on “Fix the checkout regression”', task: 'checkout', ago: 38 * MINUTE },
+      { eventType: 'approval_requested', message: 'Nova finished “Competitor landscape scan” and is waiting for your approval', task: 'competitors', ago: 12 * MINUTE },
+      { eventType: 'paused', message: '“Launch deck: storyline and slides” was paused at 61% — progress held', task: 'launch-deck', ago: 26 * MINUTE },
+      { eventType: 'started', message: 'Atlas started “Break the launch into workstreams”', task: 'breakdown', ago: 22 * MINUTE },
     ];
 
     for (const h of history) {
@@ -388,21 +368,19 @@ export function seedWorld(repos: Repositories, now: number = Date.now()): SeedRe
       if (!task) continue;
       const event: ActivityEvent = {
         id: newId('evt'),
-        kind: h.kind,
-        message: h.message,
         projectId: task.projectId,
+        agentId: task.assignedAgentId,
         taskId: task.id,
-        botId: task.botId,
-        islandId: task.islandId,
-        at: now - h.ago,
+        eventType: h.eventType,
+        message: h.message,
+        timestamp: now - h.ago,
       };
       repos.activity.create(event);
     }
 
     return {
-      islands: repos.islands.list(),
-      bots: repos.bots.list(),
       projects: repos.projects.list(),
+      agents: repos.agents.list(),
       tasks: repos.tasks.list(),
     };
   });
@@ -410,5 +388,5 @@ export function seedWorld(repos: Repositories, now: number = Date.now()): SeedRe
 
 /** True when the world has never been seeded. */
 export function isEmptyWorld(repos: Repositories): boolean {
-  return repos.islands.list().length === 0;
+  return repos.projects.list().length === 0;
 }

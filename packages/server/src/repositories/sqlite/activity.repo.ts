@@ -8,8 +8,8 @@ const MAX_LIMIT = 500;
 
 export function createActivityRepository(db: Db): ActivityRepository {
   const insert = db.prepare(`
-    INSERT INTO activity_events (id, kind, message, project_id, task_id, bot_id, island_id, at)
-    VALUES (@id, @kind, @message, @project_id, @task_id, @bot_id, @island_id, @at)
+    INSERT INTO activity_events (id, project_id, agent_id, task_id, event_type, message, timestamp)
+    VALUES (@id, @project_id, @agent_id, @task_id, @event_type, @message, @timestamp)
   `);
 
   return {
@@ -19,9 +19,8 @@ export function createActivityRepository(db: Db): ActivityRepository {
       const columns = {
         projectId: 'project_id',
         taskId: 'task_id',
-        botId: 'bot_id',
-        islandId: 'island_id',
-        kind: 'kind',
+        agentId: 'agent_id',
+        eventType: 'event_type',
       } as const;
 
       for (const key of Object.keys(columns) as (keyof typeof columns)[]) {
@@ -35,7 +34,7 @@ export function createActivityRepository(db: Db): ActivityRepository {
       const sql = `
         SELECT * FROM activity_events
         ${where.length ? `WHERE ${where.join(' AND ')}` : ''}
-        ORDER BY at DESC, rowid DESC
+        ORDER BY timestamp DESC, rowid DESC
         LIMIT ?
       `;
       return (db.prepare(sql).all(...params, limit) as ActivityRow[]).map(toActivity);
@@ -44,13 +43,12 @@ export function createActivityRepository(db: Db): ActivityRepository {
     create: (event: ActivityEvent) => {
       insert.run({
         id: event.id,
-        kind: event.kind,
-        message: event.message,
         project_id: event.projectId,
+        agent_id: event.agentId,
         task_id: event.taskId,
-        bot_id: event.botId,
-        island_id: event.islandId,
-        at: event.at,
+        event_type: event.eventType,
+        message: event.message,
+        timestamp: event.timestamp,
       });
       return event;
     },

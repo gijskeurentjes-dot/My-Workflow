@@ -44,42 +44,49 @@ line with `npm run db:reset`.
 
 ---
 
-## The five agents
+## One project is one island
 
-| Agent            | Role                        | Home island         | Owns          |
-| ---------------- | --------------------------- | ------------------- | ------------- |
-| **Atlas**        | Project Manager             | Headquarters        | Planning, review |
-| **Nova**         | Researcher                  | Research Library    | Research      |
-| **Forge**        | Developer                   | Workshop            | Development   |
-| **Slidebuilder** | Presentation Designer       | Presentation Studio | Presentations |
-| **Excel Expert** | Spreadsheet & Data Analyst  | Data Workshop       | Data & analysis |
+A **project is an island**, and every project has **its own team**. Teams are
+independent: an agent works its own project's board and never quietly picks up
+someone else's work.
 
-Each agent carries the three things a real agent would need, and they are not
-decoration — a live engine reads the same fields:
+Every island has the same eight places, and a task's *kind of work* decides
+which building it is carried out at:
 
-- **responsibilities** — what becomes its system prompt
-- **tools** — what it is allowed to reach for
-- **approvalRules** — what it must always check with you about
+| Place | What happens there | Kind of work |
+| ----- | ------------------ | ------------ |
+| **Headquarters** | Coordination, and where finished work waits for your approval | Planning, review |
+| **Research Library** | Sources, reading, written reports | Research |
+| **Workshop** | Code, builds, tests | Development |
+| **Presentation Studio** | Decks, storylines, charts | Presentation |
+| **Data Workshop** | Workbooks, formulas, models | Data & analysis |
+| **Meeting Circle** | Where agents wait between jobs, and waiting work is pinned | — |
+| **Delivery Depot** | Approved work, crated and logged | — |
+| **Gate** | The way on and off the island | — |
 
-They live in [`packages/shared/src/bots.ts`](packages/shared/src/bots.ts).
+## The agents
 
-### Islands, projects and tasks
+You hire agents onto a project from five archetypes:
 
-An **island is a work area**, not a project. A **project** is a body of work
-whose tasks are spread across the islands: a task's *kind of work* decides which
-island it is carried out on and which agent naturally owns it. So a single
-project can have Nova researching in the Library, Forge building in the
-Workshop, and Slidebuilder drafting in the Studio at the same time.
+| Archetype | Default name | Works from | Naturally owns |
+| --------- | ------------ | ---------- | -------------- |
+| **Project Manager** | Atlas | Headquarters | Planning, review |
+| **Researcher** | Nova | Research Library | Research |
+| **Developer** | Forge | Workshop | Development |
+| **Presentation Designer** | Slidebuilder | Presentation Studio | Presentations |
+| **Spreadsheet & Data Analyst** | Excel Expert | Data Workshop | Data & analysis |
 
-Every island has the same five places, and an agent walks between them:
+An archetype is a starting point, not a cage. Each agent stores its own **role**,
+**instructions** and **tools**, all editable on its page — so two projects can run
+very different Developers. Those three fields are not decoration:
 
-| Place | What happens there |
-| ----- | ------------------ |
-| **Workbench** | Where the work is actually done |
-| **Approval Post** | Finished work waits here until you decide |
-| **Delivery Depot** | Approved work, crated and logged |
-| **Rest Point** | Where an agent waits between jobs |
-| **Gate** | The way on and off the island |
+- **instructions** is what a live engine sends as that agent's **system prompt**
+- **tools** is what it is allowed to reach for
+- both live in the database, so an agent's behaviour changes without a deploy
+
+Archetypes live in
+[`packages/shared/src/archetypes.ts`](packages/shared/src/archetypes.ts); each
+agent's own brief lives in its row.
 
 ---
 
@@ -87,13 +94,12 @@ Every island has the same five places, and an agent walks between them:
 
 | Route | Screen |
 | ----- | ------ |
-| `/` | Visual workspace — all five islands, live |
-| `/islands/:id` | One island, full size, with its agents and places |
+| `/` | Visual workspace — every project island, live |
 | `/projects` | Project list |
-| `/projects/:id` | Project details and its task board |
+| `/projects/:id` | The project's island, its team, its board and its activity |
 | `/tasks` | Task board across every project |
-| `/bots` | The team |
-| `/bots/:id` | Agent details: status, history, responsibilities, rules |
+| `/agents` | Every agent, grouped by project |
+| `/agents/:id` | Agent details: status, history, and its editable brief |
 | `/approvals` | Approval queue |
 | `/activity` | Event log |
 | `/settings` | Appearance, engine status, demo reset |
@@ -122,7 +128,9 @@ that matter most:
 **The persistence seam.** Every data operation is declared as an interface in
 `repositories/types.ts`; `repositories/sqlite/` implements it. Services, routes
 and the agent engine depend only on the interfaces, so adding PostgreSQL means
-writing a second set of implementations and changing no callers.
+writing a second set of implementations and changing no callers. Schema changes
+ship as numbered migrations that run on startup and are checked for foreign-key
+violations before they are accepted.
 
 **The simulation split.** The server owns authoritative state — status, which
 place an agent is at, task progress — and pushes it over Server-Sent Events at
@@ -184,7 +192,11 @@ Everything in the brief's required behaviour is working:
 
 | | Where |
 | --- | --- |
-| Create a project | **Projects → New project** |
+| Create a project | **Projects → New project** — picks its island and starting team |
+| Hire an agent onto a project | **＋ Hire**, on the project page |
+| Dismiss an agent | On the agent's page |
+| Edit an agent's brief | **Edit** on the agent's page — role, system prompt and tools |
+| Set a task's priority | **Priority** on any task card — urgent work is picked up first |
 | View a project | **Projects →** any card |
 | Create tasks | **New task**, on the task board or inside a project |
 | Assign a task to an agent | **Assign** / **Reassign** on any task card |
@@ -200,10 +212,10 @@ Everything in the brief's required behaviour is working:
 
 ### How the work actually flows
 
-1. A task is created. Its **kind of work** decides which island it happens on
-   and which agent naturally owns it.
-2. You assign it — to the natural owner, or to anyone. An agent given work on
-   another island **travels there**.
+1. A task is created on a project. Its **kind of work** decides which building
+   on that project's island it happens at, and which archetype naturally owns it.
+2. You assign it to someone on that project's team. An agent given work on
+   another project **transfers there**, arriving at the gate.
 3. On **Start**, the agent walks to the Workbench and progress begins.
 4. At 100% it either carries the work to the **Approval Post** and waits for
    you, or — if the task does not need approval — heads straight for the depot.
@@ -221,12 +233,15 @@ agent never delivers work that needs sign-off without it.
 
 Milestones 1 and 2 are complete. The world runs, and you can drive it.
 
-- Seeded SQLite world with five islands, five agents and three projects
+- Multiple projects, each its own island with its own team
+- Multiple agents per project, hired and dismissed at will
+- Per-agent role, instructions and tools, stored and editable
+- Task priority, which orders the board and decides what is picked up first
 - Mock engine driving all seven agent states, ticking at 2 Hz
-- Full command API: projects, tasks, assignment, execution and approvals
+- Full command API: projects, agents, tasks, execution and approvals
 - Live updates over Server-Sent Events, with automatic reconnection
-- All eight screens, rendering and mutating real data
-- 58 server tests
+- Every screen rendering and mutating real data
+- 84 server tests
 
 Still to come:
 

@@ -1,11 +1,12 @@
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { BIOMES, PLOTS } from '@ai-islands/shared';
-import { Avatar, ActivityFeed, ProgressBar, StatusPill, SimulatedNotice } from '../components/ui.js';
+import { NewProjectDialog } from '../components/CreateDialogs.js';
+import { ActivityFeed, Avatar, ProgressBar, SimulatedNotice, StatusPill } from '../components/ui.js';
 import { useTheme } from '../useTheme.js';
 import { useWorld } from '../world/WorldProvider.js';
 import { useAnimationClock, useSlowClock } from '../world/useAnimationClock.js';
-import { botsForIsland, islandSummaries } from '../world/selectors.js';
+import { agentsForProject, projectSummaries } from '../world/selectors.js';
 import { IslandScene } from '../world/scene/IslandScene.js';
 
 const CLOUDS = [
@@ -16,7 +17,7 @@ const CLOUDS = [
 ];
 
 /**
- * The visual workspace.
+ * The visual workspace: one island per project.
  *
  * The islands on the left are the pleasant way to read the world. The rail on
  * the right carries exactly the same information as text, so nobody has to
@@ -29,9 +30,11 @@ export function Workspace() {
   const slowClock = useSlowClock();
   const navigate = useNavigate();
 
-  // Hovering a row in the rail highlights the matching agent card.
-  const [selectedBotId, setSelectedBotId] = useState<string | null>(null);
-  const summaries = islandSummaries(world);
+  // Hovering a row in the rail highlights the matching agent.
+  const [hoveredAgentId, setHoveredAgentId] = useState<string | null>(null);
+  const [creating, setCreating] = useState(false);
+
+  const summaries = projectSummaries(world);
 
   return (
     <div className="workspace">
@@ -47,23 +50,36 @@ export function Workspace() {
 
           <div className="world-grid">
             {summaries.map((summary) => {
-              const { island } = summary;
-              const bots = botsForIsland(world, island.id, clock);
-              const biome = BIOMES[island.biome];
+              const { project } = summary;
+              const agents = agentsForProject(world, project.id, clock);
+              const biome = BIOMES[project.appearance.biome];
 
               return (
                 <button
-                  key={island.id}
+                  key={project.id}
                   className="isle"
-                  onClick={() => navigate(`/islands/${island.id}`)}
-                  aria-label={`${island.name}. ${summary.state.label}. ${summary.bots.length} agents, ${summary.activeCount} working, ${summary.doneCount} delivered.`}
+                  onClick={() => navigate(`/projects/${project.id}`)}
+                  aria-label={`${project.name}. ${summary.state.label}. ${summary.agents.length} agents, ${summary.activeCount} working, ${summary.doneCount} delivered.`}
                 >
                   <div className="isle-art">
-                    <IslandScene island={island} bots={bots} clock={clock} theme={theme} mini />
+                    <IslandScene
+                      project={project}
+                      agents={agents}
+                      tasks={summary.tasks}
+                      clock={clock}
+                      theme={theme}
+                      selectedAgentId={hoveredAgentId}
+                      mini
+                    />
                   </div>
                   <div className="isle-card">
                     <div className="isle-top">
-                      <span className="isle-name">{island.name}</span>
+                      <span
+                        className="project-swatch"
+                        style={{ background: project.color, width: 10, height: 10 }}
+                        aria-hidden="true"
+                      />
+                      <span className="isle-name">{project.name}</span>
                       <span
                         className="pill"
                         style={{
@@ -76,25 +92,32 @@ export function Workspace() {
                         {summary.state.label}
                       </span>
                     </div>
-                    <p className="isle-blurb">{island.blurb}</p>
+                    <p className="isle-blurb">{project.description || 'No description yet.'}</p>
                     <div className="isle-meta">
                       <span>
-                        <b>{summary.bots.length}</b> agents
+                        <b>{summary.agents.length}</b> agents
                       </span>
                       <span>
                         <b>{summary.activeCount}</b> working
                       </span>
                       <span>
-                        <b>{island.crates}</b> delivered
+                        <b>{project.crates}</b> delivered
                       </span>
                       <span style={{ marginLeft: 'auto', color: biome.accent, fontWeight: 700 }}>
                         {biome.label}
                       </span>
                     </div>
+                    <ProgressBar percent={summary.percent} />
                   </div>
                 </button>
               );
             })}
+          </div>
+
+          <div style={{ display: 'grid', placeItems: 'center', paddingBottom: 36 }}>
+            <button className="btn btn-primary" onClick={() => setCreating(true)}>
+              ＋ New project island
+            </button>
           </div>
         </div>
 
@@ -102,11 +125,11 @@ export function Workspace() {
           <div className="eyebrow">What the agents are doing</div>
           <div className="legend-row">
             <span className="legend-key" style={{ background: 'var(--ok)' }} />
-            Working at the workbench
+            Working at a building
           </div>
           <div className="legend-row">
             <span className="legend-key" style={{ background: 'var(--warn)' }} />
-            Waiting for your approval
+            At headquarters, waiting for you
           </div>
           <div className="legend-row">
             <span className="legend-key" style={{ background: 'var(--violet)' }} />
@@ -128,14 +151,15 @@ export function Workspace() {
         <div className="rail-pad">
           <h2 style={{ fontSize: 18 }}>Your AI world</h2>
           <p className="muted" style={{ marginTop: 4 }}>
-            {world.islands.length} work areas, {world.bots.length} agents.
+            {world.projects.length} project {world.projects.length === 1 ? 'island' : 'islands'},{' '}
+            {world.agents.length} agents.
           </p>
         </div>
 
         <div className="rail-scroll">
           <div className="stat-grid" style={{ marginBottom: 14 }}>
             <div className="stat">
-              <b>{world.stats.botsWorking}</b>
+              <b>{world.stats.agentsWorking}</b>
               <span>Working</span>
             </div>
             <div className={`stat${world.stats.approvalsPending ? ' attention' : ''}`}>
@@ -154,58 +178,69 @@ export function Workspace() {
 
           <SimulatedNotice />
 
-          <div className="card">
-            <h4>The team right now</h4>
-            <ul style={{ listStyle: 'none', margin: 0, padding: 0 }}>
-              {world.bots.map((bot) => {
-                const display = botsForIsland(world, bot.islandId, clock).find(
-                  (d) => d.bot.id === bot.id,
-                );
-                if (!display) return null;
-                const isSelected = selectedBotId === bot.id;
+          {summaries.map((summary) => {
+            const displays = agentsForProject(world, summary.project.id, clock);
+            if (displays.length === 0) return null;
 
-                return (
-                  <li key={bot.id}>
+            return (
+              <div className="card" key={summary.project.id}>
+                <div className="between" style={{ marginBottom: 8 }}>
+                  <h4 style={{ margin: 0 }}>
                     <Link
-                      to={`/bots/${bot.id}`}
-                      className="bot-card"
-                      style={isSelected ? { borderColor: 'var(--brand)' } : undefined}
-                      onMouseEnter={() => setSelectedBotId(bot.id)}
-                      onMouseLeave={() => setSelectedBotId(null)}
+                      to={`/projects/${summary.project.id}`}
+                      style={{ textDecoration: 'none', color: 'inherit' }}
                     >
-                      <div className="row">
-                        <Avatar botKey={bot.key} size={34} />
-                        <div style={{ flex: 1, minWidth: 0 }}>
-                          <div className="bot-name">{bot.name}</div>
-                          <div className="bot-role">{display.profile.title}</div>
-                        </div>
-                        <StatusPill status={bot.status} />
-                      </div>
-                      <div className="bot-line">{display.doing}</div>
-                      <div className="bot-line" style={{ marginTop: 4, color: 'var(--ink-3)' }}>
-                        {display.island.name} ·{' '}
-                        {bot.movement
-                          ? `walking to the ${PLOTS[bot.movement.toKey].label}`
-                          : `at the ${PLOTS[bot.locationKey].label}`}
-                      </div>
-                      {display.task && display.task.status !== 'completed' && (
-                        <ProgressBar
-                          percent={display.task.progress}
-                          tone={
-                            bot.status === 'failed'
-                              ? 'bad'
-                              : bot.status === 'paused'
-                                ? 'info'
-                                : 'ok'
-                          }
-                        />
-                      )}
+                      {summary.project.name}
                     </Link>
-                  </li>
-                );
-              })}
-            </ul>
-          </div>
+                  </h4>
+                  <span className="count">{displays.length}</span>
+                </div>
+
+                <ul style={{ listStyle: 'none', margin: 0, padding: 0 }}>
+                  {displays.map((d) => (
+                    <li key={d.agent.id}>
+                      <Link
+                        to={`/agents/${d.agent.id}`}
+                        className="bot-card"
+                        style={
+                          hoveredAgentId === d.agent.id ? { borderColor: 'var(--brand)' } : undefined
+                        }
+                        onMouseEnter={() => setHoveredAgentId(d.agent.id)}
+                        onMouseLeave={() => setHoveredAgentId(null)}
+                      >
+                        <div className="row">
+                          <Avatar archetype={d.agent.archetype} size={34} />
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <div className="bot-name">{d.agent.name}</div>
+                            <div className="bot-role">{d.agent.role || d.profile.title}</div>
+                          </div>
+                          <StatusPill status={d.agent.status} />
+                        </div>
+                        <div className="bot-line">{d.doing}</div>
+                        <div className="bot-line" style={{ marginTop: 4, color: 'var(--ink-3)' }}>
+                          {d.agent.movement
+                            ? `walking to the ${PLOTS[d.agent.movement.toKey].label}`
+                            : `at the ${PLOTS[d.agent.currentLocation].label}`}
+                        </div>
+                        {d.task && d.task.status !== 'completed' && (
+                          <ProgressBar
+                            percent={d.task.progress}
+                            tone={
+                              d.agent.status === 'failed'
+                                ? 'bad'
+                                : d.agent.status === 'paused'
+                                  ? 'info'
+                                  : 'ok'
+                            }
+                          />
+                        )}
+                      </Link>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            );
+          })}
 
           <div className="card">
             <div className="between" style={{ marginBottom: 8 }}>
@@ -218,6 +253,8 @@ export function Workspace() {
           </div>
         </div>
       </aside>
+
+      {creating && <NewProjectDialog onClose={() => setCreating(false)} />}
     </div>
   );
 }

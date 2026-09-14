@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { z } from 'zod';
+import { ARCHETYPE_KEYS, type AgentArchetype } from '@ai-islands/shared';
 import type { AppContext } from '../context.js';
 import { command, parseBody } from './helpers.js';
 
@@ -9,7 +10,9 @@ const listQuery = z.object({
 
 const createBody = z.object({
   name: z.string().min(1, 'A project needs a name').max(120),
-  goal: z.string().max(600).optional(),
+  description: z.string().max(600).optional(),
+  /** Who to hire onto the new project. Defaults to a project manager. */
+  team: z.array(z.enum(ARCHETYPE_KEYS as [AgentArchetype, ...AgentArchetype[]])).max(8).optional(),
   color: z
     .string()
     .regex(/^#[0-9a-fA-F]{6}$/, 'Colour must be a hex value like #4a8ff0')
@@ -19,7 +22,7 @@ const createBody = z.object({
 const updateBody = z
   .object({
     name: z.string().min(1).max(120).optional(),
-    goal: z.string().max(600).optional(),
+    description: z.string().max(600).optional(),
     status: z.enum(['active', 'paused', 'archived']).optional(),
     color: z.string().regex(/^#[0-9a-fA-F]{6}$/).optional(),
   })
@@ -43,6 +46,7 @@ export function createProjectsRouter(ctx: AppContext): Router {
         const tasks = ctx.repos.tasks.list({ projectId: project.id });
         return {
           ...project,
+          agentCount: ctx.repos.agents.findByProject(project.id).length,
           taskCount: tasks.length,
           completedCount: tasks.filter((t) => t.status === 'completed').length,
           openCount: tasks.filter((t) => t.status !== 'completed' && t.status !== 'cancelled').length,
@@ -62,6 +66,7 @@ export function createProjectsRouter(ctx: AppContext): Router {
 
     res.json({
       project,
+      agents: ctx.world.listAgentViews(project.id),
       tasks: ctx.world.listTaskViews({ projectId: project.id }),
       activity: ctx.world.listActivity({ projectId: project.id, limit: 40 }),
     });

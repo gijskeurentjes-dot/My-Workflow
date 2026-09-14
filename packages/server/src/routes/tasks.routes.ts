@@ -13,8 +13,7 @@ import { command, parseBody } from './helpers.js';
 
 const listQuery = z.object({
   projectId: z.string().optional(),
-  islandId: z.string().optional(),
-  botId: z.string().optional(),
+  assignedAgentId: z.string().optional(),
   status: z.enum(TASK_STATUSES).optional(),
   type: z.enum(TASK_TYPE_KEYS as [TaskType, ...TaskType[]]).optional(),
   priority: z.enum(TASK_PRIORITIES).optional(),
@@ -23,11 +22,11 @@ const listQuery = z.object({
 const createBody = z.object({
   projectId: z.string().min(1, 'Pick a project'),
   title: z.string().min(1, 'A task needs a title').max(160),
-  notes: z.string().max(1000).optional(),
+  description: z.string().max(1000).optional(),
   type: z.enum(TASK_TYPE_KEYS as [TaskType, ...TaskType[]]),
   priority: z.enum(TASK_PRIORITIES).optional(),
   needsApproval: z.boolean().optional(),
-  botId: z.string().nullable().optional(),
+  agentId: z.string().nullable().optional(),
   /** Assign and start in one step, instead of leaving it on the board. */
   autoStart: z.boolean().optional(),
 });
@@ -35,13 +34,13 @@ const createBody = z.object({
 const updateBody = z
   .object({
     title: z.string().min(1).max(160).optional(),
-    notes: z.string().max(1000).optional(),
+    description: z.string().max(1000).optional(),
     needsApproval: z.boolean().optional(),
     priority: z.enum(TASK_PRIORITIES).optional(),
   })
   .refine((v) => Object.keys(v).length > 0, { message: 'Nothing to update' });
 
-const assignBody = z.object({ botId: z.string().min(1, 'Pick an agent') });
+const assignBody = z.object({ agentId: z.string().min(1, 'Pick an agent') });
 
 export function createTasksRouter(ctx: AppContext): Router {
   const router = Router();
@@ -117,7 +116,7 @@ export function createTasksRouter(ctx: AppContext): Router {
     const body = parseBody(assignBody, req.body, res);
     if (!body) return;
     command(ctx, res, () => ({
-      changes: ctx.workflow.assignTask(req.params.id, body.botId),
+      changes: ctx.workflow.assignTask(req.params.id, body.agentId),
       body: ctx.world.findTaskView(req.params.id),
     }));
   });

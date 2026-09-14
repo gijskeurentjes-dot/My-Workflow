@@ -1,23 +1,23 @@
-import { STATUS_LABEL, STATUS_TONE, TILE_W, iso } from '@ai-islands/shared';
-import type { BotDisplay } from '../selectors.js';
+import { STATUS_LABEL, STATUS_TONE, iso } from '@ai-islands/shared';
+import type { AgentDisplay } from '../selectors.js';
 import { Shadow, type SceneScale } from './Terrain.js';
 
-interface BotSpriteProps extends SceneScale {
-  display: BotDisplay;
+interface AgentSpriteProps extends SceneScale {
+  display: AgentDisplay;
   /** Milliseconds, used to drive the walk cycle and breathing. */
   clock: number;
   selected: boolean;
-  onSelect?: (botId: string) => void;
+  onSelect?: (agentId: string) => void;
 }
 
 /** The tool each role carries, and the silhouette that distinguishes it. */
 function RoleRig({
-  botKey,
+  archetype,
   color,
   active,
   workPhase,
 }: {
-  botKey: string;
+  archetype: string;
   color: { base: string; dark: string; light: string };
   active: boolean;
   workPhase: number | null;
@@ -25,7 +25,7 @@ function RoleRig({
   // While working, the tool in the agent's hand actually moves.
   const tool = workPhase === null ? '' : ` rotate(${(Math.sin(workPhase) * 9).toFixed(1)})`;
 
-  if (botKey === 'atlas') {
+  if (archetype === 'pm') {
     return (
       <g>
         <rect x={-8.5} y={-33} width="17" height="13" rx="5" fill={color.light} />
@@ -42,7 +42,7 @@ function RoleRig({
     );
   }
 
-  if (botKey === 'nova') {
+  if (archetype === 'researcher') {
     return (
       <g>
         <circle cx="0" cy={-26.5} r="9" fill={color.light} />
@@ -55,7 +55,7 @@ function RoleRig({
     );
   }
 
-  if (botKey === 'forge') {
+  if (archetype === 'developer') {
     return (
       <g>
         <rect x={-9} y={-33.5} width="18" height="14" rx="3.5" fill={color.light} />
@@ -73,7 +73,7 @@ function RoleRig({
     );
   }
 
-  if (botKey === 'slidebuilder') {
+  if (archetype === 'presenter') {
     return (
       <g>
         <rect x={-8.5} y={-33} width="17" height="13.5" rx="6" fill={color.light} />
@@ -87,7 +87,7 @@ function RoleRig({
     );
   }
 
-  // Excel Expert
+  // analyst
   return (
     <g>
       <rect x={-8.5} y={-33} width="17" height="13" rx="4" fill={color.light} />
@@ -113,8 +113,8 @@ function RoleRig({
  * reachable by keyboard and announced by a screen reader — the animation is
  * the presentation, never the only way to learn what a bot is doing.
  */
-export function BotSprite({ display, clock, tw, th, sc, mini, selected, onSelect }: BotSpriteProps) {
-  const { bot, profile, position, facing, movement, carrying, task, doing } = display;
+export function AgentSprite({ display, clock, tw, th, sc, mini, selected, onSelect }: AgentSpriteProps) {
+  const { agent, profile, position, facing, movement, carrying, task, doing } = display;
   const p = iso(position.c, position.r, tw, th);
 
   const walking = movement === 'walking';
@@ -123,23 +123,23 @@ export function BotSprite({ display, clock, tw, th, sc, mini, selected, onSelect
   // Everything below is derived from the shared clock, so no per-bot timers.
   const seconds = clock / 1000;
   // Offset by a stable hash of the id, so five bots do not breathe in lockstep.
-  const phase = (bot.id.charCodeAt(4) % 10) * 0.7;
+  const phase = (agent.id.charCodeAt(4) % 10) * 0.7;
   const gait = walking ? seconds * 9.5 + phase : 0;
   const swing = walking ? Math.sin(gait) : 0;
   const bob = walking ? Math.abs(Math.sin(gait)) * -2.4 : Math.sin(seconds * 1.6 + phase) * -0.9;
   const workPhase = working ? seconds * 3.4 + phase : null;
-  const shake = bot.status === 'failed' ? Math.sin(seconds * 6.4 + phase) * 0.9 : 0;
-  const asleep = bot.status === 'paused' || (bot.status === 'idle' && !walking);
+  const shake = agent.status === 'failed' ? Math.sin(seconds * 6.4 + phase) * 0.9 : 0;
+  const asleep = agent.status === 'paused' || (agent.status === 'idle' && !walking);
   // A blink is a short dip once every few seconds.
   const blinking = !asleep && Math.sin(seconds * 1.3 + phase) > 0.985;
 
-  const statusColor = `var(--${STATUS_TONE[bot.status]})`;
+  const statusColor = `var(--${STATUS_TONE[agent.status]})`;
 
   let bubble: { text: string; tint: string } | null = null;
   if (!mini) {
-    if (bot.status === 'waiting_approval') bubble = { text: '!', tint: 'var(--warn)' };
-    else if (bot.status === 'failed') bubble = { text: '✕', tint: 'var(--bad)' };
-    else if (bot.status === 'completed') bubble = { text: '✓', tint: 'var(--violet)' };
+    if (agent.status === 'waiting_approval') bubble = { text: '!', tint: 'var(--warn)' };
+    else if (agent.status === 'failed') bubble = { text: '✕', tint: 'var(--bad)' };
+    else if (agent.status === 'completed') bubble = { text: '✓', tint: 'var(--violet)' };
     else if (task?.status === 'delivering') bubble = { text: '\u{1F4E6}', tint: 'var(--violet)' };
     else if (asleep) bubble = { text: 'z', tint: 'var(--info)' };
     else if (working) bubble = { text: profile.icon, tint: 'var(--ok)' };
@@ -147,10 +147,10 @@ export function BotSprite({ display, clock, tw, th, sc, mini, selected, onSelect
 
   const progress = task ? Math.min(100, task.progress) : 0;
   const showBar =
-    bot.status === 'working' || bot.status === 'paused' || bot.status === 'failed';
-  const chipW = Math.max(56, bot.name.length * 5.9 + 30);
+    agent.status === 'working' || agent.status === 'paused' || agent.status === 'failed';
+  const chipW = Math.max(56, agent.name.length * 5.9 + 30);
 
-  const label = `${bot.name}, ${profile.title}. ${STATUS_LABEL[bot.status]}. ${doing}`;
+  const label = `${agent.name}, ${display.agent.role || profile.title}, on ${display.project.name}. ${STATUS_LABEL[agent.status]}. ${doing}`;
 
   return (
     <g
@@ -162,7 +162,7 @@ export function BotSprite({ display, clock, tw, th, sc, mini, selected, onSelect
         onSelect
           ? (e) => {
               e.stopPropagation();
-              onSelect(bot.id);
+              onSelect(agent.id);
             }
           : undefined
       }
@@ -172,7 +172,7 @@ export function BotSprite({ display, clock, tw, th, sc, mini, selected, onSelect
               if (e.key === 'Enter' || e.key === ' ') {
                 e.preventDefault();
                 e.stopPropagation();
-                onSelect(bot.id);
+                onSelect(agent.id);
               }
             }
           : undefined
@@ -226,7 +226,7 @@ export function BotSprite({ display, clock, tw, th, sc, mini, selected, onSelect
           <rect x={-10.6} y={-20} width="3.4" height="10" rx="1.7" fill={profile.color.dark} />
         </g>
 
-        <RoleRig botKey={bot.key} color={profile.color} active={working} workPhase={workPhase} />
+        <RoleRig archetype={agent.archetype} color={profile.color} active={working} workPhase={workPhase} />
 
         {/* Ticks of simulated work rising from the desk. */}
         {working && !mini &&
@@ -252,8 +252,8 @@ export function BotSprite({ display, clock, tw, th, sc, mini, selected, onSelect
           </>
         ) : (
           <>
-            <circle cx={-2.4} cy={-26.5} r="1.6" fill={bot.status === 'failed' ? '#ff9a8f' : '#2b2f3d'} />
-            <circle cx="2.4" cy={-26.5} r="1.6" fill={bot.status === 'failed' ? '#ff9a8f' : '#2b2f3d'} />
+            <circle cx={-2.4} cy={-26.5} r="1.6" fill={agent.status === 'failed' ? '#ff9a8f' : '#2b2f3d'} />
+            <circle cx="2.4" cy={-26.5} r="1.6" fill={agent.status === 'failed' ? '#ff9a8f' : '#2b2f3d'} />
           </>
         )}
 
@@ -295,7 +295,7 @@ export function BotSprite({ display, clock, tw, th, sc, mini, selected, onSelect
             fill="var(--ink)"
             fontFamily="var(--body)"
           >
-            {bot.name}
+            {agent.name}
           </text>
           {showBar && (
             <>
@@ -306,7 +306,7 @@ export function BotSprite({ display, clock, tw, th, sc, mini, selected, onSelect
                 width={((chipW - 12) * progress) / 100}
                 height="2.4"
                 rx="1.2"
-                fill={`var(--${STATUS_TONE[bot.status]})`}
+                fill={`var(--${STATUS_TONE[agent.status]})`}
               />
             </>
           )}
@@ -329,4 +329,3 @@ export function BotSprite({ display, clock, tw, th, sc, mini, selected, onSelect
   );
 }
 
-export const BOT_FULL_TILE = TILE_W;

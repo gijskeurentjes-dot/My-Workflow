@@ -1,65 +1,71 @@
 import type {
   ActivityEvent,
-  TaskPriority,
+  ActivityEventType,
+  Agent,
+  AgentArchetype,
   ApprovalRequest,
-  Bot,
-  BotKey,
   BiomeKey,
-  Island,
-  IslandKey,
   PlotKey,
   Project,
   Task,
+  TaskPriority,
 } from '@ai-islands/shared';
 
 /**
  * Row shapes and the mapping to domain objects.
  *
- * SQLite has no booleans and no nested objects, so the translation lives here
- * rather than being repeated in every repository method.
+ * SQLite has no booleans, no arrays and no nested objects, so the translation
+ * lives here rather than being repeated in every repository method.
  */
 
-export interface IslandRow {
+export interface ProjectRow {
   id: string;
-  key: string;
   name: string;
-  blurb: string;
+  description: string;
+  status: string;
+  color: string;
   biome: string;
   seed: number;
   layout_col: number;
   layout_row: number;
   crates: number;
   created_at: number;
+  updated_at: number;
 }
 
-export const toIsland = (r: IslandRow): Island => ({
+export const toProject = (r: ProjectRow): Project => ({
   id: r.id,
-  key: r.key as IslandKey,
   name: r.name,
-  blurb: r.blurb,
-  biome: r.biome as BiomeKey,
-  seed: r.seed,
-  layout: { col: r.layout_col, row: r.layout_row },
+  description: r.description,
+  status: r.status as Project['status'],
+  color: r.color,
+  appearance: {
+    biome: r.biome as BiomeKey,
+    seed: r.seed,
+    layout: { col: r.layout_col, row: r.layout_row },
+  },
   crates: r.crates,
   createdAt: r.created_at,
+  updatedAt: r.updated_at,
 });
 
-export interface BotRow {
+export interface AgentRow {
   id: string;
-  key: string;
+  project_id: string;
+  archetype: string;
   name: string;
-  island_id: string;
   role: string;
   instructions: string;
   tools: string;
   status: string;
-  task_id: string | null;
-  location_key: string;
+  current_task_id: string | null;
+  current_location: string;
   move_from: string | null;
   move_to: string | null;
   move_departed: number | null;
   move_arrives: number | null;
   progress: number;
+  created_at: number;
   updated_at: number;
 }
 
@@ -73,17 +79,17 @@ function parseTools(raw: string): string[] {
   }
 }
 
-export const toBot = (r: BotRow): Bot => ({
+export const toAgent = (r: AgentRow): Agent => ({
   id: r.id,
-  key: r.key as BotKey,
+  projectId: r.project_id,
+  archetype: r.archetype as AgentArchetype,
   name: r.name,
-  islandId: r.island_id,
   role: r.role,
   instructions: r.instructions,
   tools: parseTools(r.tools),
-  status: r.status as Bot['status'],
-  taskId: r.task_id,
-  locationKey: r.location_key as PlotKey,
+  status: r.status as Agent['status'],
+  currentTaskId: r.current_task_id,
+  currentLocation: r.current_location as PlotKey,
   // All four movement columns are written together, so testing one is enough.
   movement:
     r.move_to && r.move_from && r.move_departed !== null && r.move_arrives !== null
@@ -95,25 +101,6 @@ export const toBot = (r: BotRow): Bot => ({
         }
       : null,
   progress: r.progress,
-  updatedAt: r.updated_at,
-});
-
-export interface ProjectRow {
-  id: string;
-  name: string;
-  goal: string;
-  status: string;
-  color: string;
-  created_at: number;
-  updated_at: number;
-}
-
-export const toProject = (r: ProjectRow): Project => ({
-  id: r.id,
-  name: r.name,
-  goal: r.goal,
-  status: r.status as Project['status'],
-  color: r.color,
   createdAt: r.created_at,
   updatedAt: r.updated_at,
 });
@@ -121,13 +108,13 @@ export const toProject = (r: ProjectRow): Project => ({
 export interface TaskRow {
   id: string;
   project_id: string;
+  assigned_agent_id: string | null;
   title: string;
-  notes: string;
+  description: string;
   type: string;
   status: string;
   priority: string;
-  island_id: string;
-  bot_id: string | null;
+  building_key: string;
   progress: number;
   duration_seconds: number;
   needs_approval: number;
@@ -141,13 +128,13 @@ export interface TaskRow {
 export const toTask = (r: TaskRow): Task => ({
   id: r.id,
   projectId: r.project_id,
+  assignedAgentId: r.assigned_agent_id,
   title: r.title,
-  notes: r.notes,
+  description: r.description,
   type: r.type as Task['type'],
   status: r.status as Task['status'],
   priority: r.priority as TaskPriority,
-  islandId: r.island_id,
-  botId: r.bot_id,
+  buildingKey: r.building_key as PlotKey,
   progress: r.progress,
   durationSeconds: r.duration_seconds,
   needsApproval: r.needs_approval === 1,
@@ -161,7 +148,7 @@ export const toTask = (r: TaskRow): Task => ({
 export interface ApprovalRow {
   id: string;
   task_id: string;
-  bot_id: string;
+  agent_id: string;
   summary: string;
   status: string;
   requested_at: number;
@@ -172,7 +159,7 @@ export interface ApprovalRow {
 export const toApproval = (r: ApprovalRow): ApprovalRequest => ({
   id: r.id,
   taskId: r.task_id,
-  botId: r.bot_id,
+  agentId: r.agent_id,
   summary: r.summary,
   status: r.status as ApprovalRequest['status'],
   requestedAt: r.requested_at,
@@ -182,22 +169,20 @@ export const toApproval = (r: ApprovalRow): ApprovalRequest => ({
 
 export interface ActivityRow {
   id: string;
-  kind: string;
-  message: string;
   project_id: string | null;
+  agent_id: string | null;
   task_id: string | null;
-  bot_id: string | null;
-  island_id: string | null;
-  at: number;
+  event_type: string;
+  message: string;
+  timestamp: number;
 }
 
 export const toActivity = (r: ActivityRow): ActivityEvent => ({
   id: r.id,
-  kind: r.kind as ActivityEvent['kind'],
-  message: r.message,
   projectId: r.project_id,
+  agentId: r.agent_id,
   taskId: r.task_id,
-  botId: r.bot_id,
-  islandId: r.island_id,
-  at: r.at,
+  eventType: r.event_type as ActivityEventType,
+  message: r.message,
+  timestamp: r.timestamp,
 });

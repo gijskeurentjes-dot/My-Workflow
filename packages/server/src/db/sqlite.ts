@@ -35,6 +35,37 @@ export function migrate(db: Db): void {
     );
   `);
 
+  /*
+   * Foreign keys go off for the duration.
+   *
+   * Reshaping a schema in SQLite means rebuilding tables — create the new
+   * shape, copy the rows, drop the old, rename — and with enforcement on, a
+   * table whose parent has already been rebuilt cannot be altered at all.
+   * This is the documented recipe, and `foreign_key_check` below is what
+   * makes it safe: nothing is committed as clean without passing it.
+   *
+   * The pragma cannot change inside a transaction, so it is set out here.
+   */
+  const hadForeignKeys = db.pragma('foreign_keys', { simple: true }) === 1;
+  db.pragma('foreign_keys = OFF');
+
+  try {
+    applyPending(db);
+
+    const violations = db.pragma('foreign_key_check') as unknown[];
+    if (violations.length > 0) {
+      throw new Error(
+        `Migration left ${violations.length} foreign key violation(s): ${JSON.stringify(violations.slice(0, 5))}`,
+      );
+    }
+  } finally {
+    if (hadForeignKeys) db.pragma('foreign_keys = ON');
+  }
+}
+
+/** Apply any migrations this database has not seen yet, newest last. */
+function applyPending(db: Db): void {
+
   const applied = new Set(
     db.prepare('SELECT id FROM schema_migrations').all().map((r) => (r as { id: number }).id),
   );
@@ -63,6 +94,7 @@ export function dropAll(db: Db): void {
       DROP TABLE IF EXISTS activity_events;
       DROP TABLE IF EXISTS approval_requests;
       DROP TABLE IF EXISTS tasks;
+      DROP TABLE IF EXISTS agents;
       DROP TABLE IF EXISTS bots;
       DROP TABLE IF EXISTS projects;
       DROP TABLE IF EXISTS islands;

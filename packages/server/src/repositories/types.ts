@@ -1,13 +1,13 @@
 import type {
   ActivityEvent,
-  ActivityKind,
+  ActivityEventType,
+  Agent,
+  AgentMovement,
+  AgentStatus,
   ApprovalRequest,
   ApprovalStatus,
-  Bot,
-  BotKey,
   Id,
-  Island,
-  IslandKey,
+  PlotKey,
   Project,
   ProjectStatus,
   Task,
@@ -24,66 +24,75 @@ import type {
  * implementations; no caller changes.
  */
 
-export interface IslandRepository {
-  list(): Island[];
-  findById(id: Id): Island | null;
-  findByKey(key: IslandKey): Island | null;
-  create(island: Island): Island;
-  /** Increment the delivered-crate count and return the new island. */
-  addCrate(id: Id): Island | null;
-}
-
-export interface BotRepository {
-  list(): Bot[];
-  findById(id: Id): Bot | null;
-  findByKey(key: BotKey): Bot | null;
-  findByIsland(islandId: Id): Bot[];
-  create(bot: Bot): Bot;
-  update(id: Id, patch: BotPatch): Bot | null;
-}
-
-/** Only the mutable half of a bot. Identity and island are fixed at creation. */
-export interface BotPatch {
-  status?: Bot['status'];
-  taskId?: Id | null;
-  /**
-   * Agents relocate when they are given work on another island. Home is where
-   * they return when idle, but it is not where they are stuck.
-   */
-  islandId?: Id;
-  locationKey?: Bot['locationKey'];
-  movement?: Bot['movement'];
-  progress?: number;
-  /** What this agent is for. */
-  role?: string;
-  /** The brief a real engine would send as its system prompt. */
-  instructions?: string;
-  /** What it is allowed to reach for. */
-  tools?: string[];
-  /**
-   * When this change happened. The agent engine passes its own tick time so
-   * that durations it measures against `updatedAt` — how long a bot has been
-   * celebrating, for instance — stay correct under a controlled clock.
-   * Defaults to now.
-   */
-  updatedAt?: number;
+export interface ProjectPatch {
+  name?: string;
+  description?: string;
+  status?: ProjectStatus;
+  color?: string;
 }
 
 export interface ProjectRepository {
   list(filter?: { status?: ProjectStatus }): Project[];
   findById(id: Id): Project | null;
+  /** Used to pick a distinct island appearance for the next project. */
+  count(): number;
   create(project: Project): Project;
-  update(id: Id, patch: Partial<Pick<Project, 'name' | 'goal' | 'status' | 'color'>>): Project | null;
+  update(id: Id, patch: ProjectPatch): Project | null;
+  delete(id: Id): boolean;
+  /** Increment the delivered-crate count and return the updated project. */
+  addCrate(id: Id): Project | null;
+}
+
+/** Only the mutable half of an agent. Its archetype is fixed at hiring. */
+export interface AgentPatch {
+  /** Agents can be moved between projects. */
+  projectId?: Id;
+  name?: string;
+  role?: string;
+  instructions?: string;
+  tools?: string[];
+  status?: AgentStatus;
+  currentTaskId?: Id | null;
+  currentLocation?: PlotKey;
+  movement?: AgentMovement | null;
+  progress?: number;
+  /**
+   * When this change happened. The agent engine passes its own tick time so
+   * that durations it measures against `updatedAt` stay correct under a
+   * controlled clock. Defaults to now.
+   */
+  updatedAt?: number;
+}
+
+export interface AgentRepository {
+  list(): Agent[];
+  findById(id: Id): Agent | null;
+  findByProject(projectId: Id): Agent[];
+  create(agent: Agent): Agent;
+  update(id: Id, patch: AgentPatch): Agent | null;
   delete(id: Id): boolean;
 }
 
 export interface TaskFilter {
   projectId?: Id;
-  islandId?: Id;
-  botId?: Id;
+  assignedAgentId?: Id;
   status?: TaskStatus | TaskStatus[];
   type?: TaskType;
   priority?: TaskPriority;
+  buildingKey?: PlotKey;
+}
+
+export interface TaskPatch {
+  title?: string;
+  description?: string;
+  status?: TaskStatus;
+  priority?: TaskPriority;
+  assignedAgentId?: Id | null;
+  progress?: number;
+  needsApproval?: boolean;
+  blocker?: string | null;
+  startedAt?: number | null;
+  completedAt?: number | null;
 }
 
 export interface TaskRepository {
@@ -92,21 +101,8 @@ export interface TaskRepository {
   create(task: Task): Task;
   update(id: Id, patch: TaskPatch): Task | null;
   delete(id: Id): boolean;
-  /** Tasks an engine tick could advance, in creation order. */
+  /** Tasks an engine tick could advance, most urgent first. */
   listAdvanceable(): Task[];
-}
-
-export interface TaskPatch {
-  title?: string;
-  notes?: string;
-  status?: TaskStatus;
-  priority?: TaskPriority;
-  botId?: Id | null;
-  progress?: number;
-  needsApproval?: boolean;
-  blocker?: string | null;
-  startedAt?: number | null;
-  completedAt?: number | null;
 }
 
 export interface ApprovalRepository {
@@ -114,15 +110,18 @@ export interface ApprovalRepository {
   findById(id: Id): ApprovalRequest | null;
   findPendingByTask(taskId: Id): ApprovalRequest | null;
   create(request: ApprovalRequest): ApprovalRequest;
-  decide(id: Id, status: Exclude<ApprovalStatus, 'pending'>, note: string | null): ApprovalRequest | null;
+  decide(
+    id: Id,
+    status: Exclude<ApprovalStatus, 'pending'>,
+    note: string | null,
+  ): ApprovalRequest | null;
 }
 
 export interface ActivityFilter {
   projectId?: Id;
   taskId?: Id;
-  botId?: Id;
-  islandId?: Id;
-  kind?: ActivityKind;
+  agentId?: Id;
+  eventType?: ActivityEventType;
   limit?: number;
 }
 
@@ -133,9 +132,8 @@ export interface ActivityRepository {
 
 /** Everything the service layer is handed at construction. */
 export interface Repositories {
-  islands: IslandRepository;
-  bots: BotRepository;
   projects: ProjectRepository;
+  agents: AgentRepository;
   tasks: TaskRepository;
   approvals: ApprovalRepository;
   activity: ActivityRepository;

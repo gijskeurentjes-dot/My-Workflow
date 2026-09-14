@@ -77,11 +77,11 @@ export function createContext(options: CreateContextOptions = {}): AppContext {
    */
   const publish = (changes: EngineChanges): void => {
     const at = Date.now();
-    if (changes.bots.length || changes.tasks.length) {
+    if (changes.agents.length || changes.tasks.length) {
       broadcaster.broadcast({
         type: 'tick',
         at,
-        bots: changes.bots,
+        agents: changes.agents,
         tasks: changes.tasks,
         stats: world.stats(),
       });
@@ -93,10 +93,7 @@ export function createContext(options: CreateContextOptions = {}): AppContext {
     if (changes.approvals.length || changes.approvalsChanged) {
       broadcaster.broadcast({ type: 'approvals', at, approvals: repos.approvals.list() });
     }
-    if (changes.islandsChanged) {
-      broadcaster.broadcast({ type: 'islands', at, islands: repos.islands.list() });
-    }
-    // A command can create or delete a project, which no other event carries.
+    // Crates, creation and deletion all move the project list.
     if (changes.projectsChanged) {
       broadcaster.broadcast({ type: 'projects', at, projects: repos.projects.list() });
     }

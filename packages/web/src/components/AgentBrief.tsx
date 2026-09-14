@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import type { Bot } from '@ai-islands/shared';
+import type { Agent } from '@ai-islands/shared';
 import { api } from '../api/client.js';
 import { useCommands } from '../world/CommandProvider.js';
 import { Field } from './Dialog.js';
@@ -10,22 +10,22 @@ import { Field } from './Dialog.js';
  * These three fields are not documentation. `instructions` is what a real
  * engine sends as this agent's system prompt, `tools` is what it may reach for,
  * and both are stored per agent — so an agent's behaviour can change without a
- * deploy, and a Claude-backed engine reads them straight from the database.
+ * deploy, and two projects can run very different Developers.
  */
-export function AgentBrief({ bot }: { bot: Bot }) {
+export function AgentBrief({ agent }: { agent: Agent }) {
   const { run, isPending } = useCommands();
   const [editing, setEditing] = useState(false);
-  const [role, setRole] = useState(bot.role);
-  const [instructions, setInstructions] = useState(bot.instructions);
-  const [toolsText, setToolsText] = useState(bot.tools.join('\n'));
+  const [role, setRole] = useState(agent.role);
+  const [instructions, setInstructions] = useState(agent.instructions);
+  const [toolsText, setToolsText] = useState(agent.tools.join('\n'));
 
-  const key = `bot:${bot.id}`;
+  const key = `agent:${agent.id}`;
   const pending = isPending(key);
 
   const startEditing = () => {
-    setRole(bot.role);
-    setInstructions(bot.instructions);
-    setToolsText(bot.tools.join('\n'));
+    setRole(agent.role);
+    setInstructions(agent.instructions);
+    setToolsText(agent.tools.join('\n'));
     setEditing(true);
   };
 
@@ -33,7 +33,7 @@ export function AgentBrief({ bot }: { bot: Bot }) {
     const ok = await run(
       key,
       () =>
-        api.updateBot(bot.id, {
+        api.updateAgent(agent.id, {
           role,
           instructions,
           tools: toolsText
@@ -41,7 +41,7 @@ export function AgentBrief({ bot }: { bot: Bot }) {
             .map((t) => t.trim())
             .filter(Boolean),
         }),
-      `${bot.name}’s brief was updated`,
+      `${agent.name}’s brief was updated`,
     );
     if (ok) setEditing(false);
   };
@@ -58,24 +58,24 @@ export function AgentBrief({ bot }: { bot: Bot }) {
           </div>
           <div className="kv">
             <span>Role</span>
-            <b>{bot.role || '—'}</b>
+            <b>{agent.role || '—'}</b>
           </div>
           <p className="muted" style={{ marginTop: 10, marginBottom: 6 }}>
             What a live engine would send as this agent’s system prompt:
           </p>
-          <pre className="brief">{bot.instructions || 'No instructions set.'}</pre>
+          <pre className="brief">{agent.instructions || 'No instructions set.'}</pre>
         </section>
 
         <section className="card">
           <h4>
-            Tools <span className="count">{bot.tools.length}</span>
+            Tools <span className="count">{agent.tools.length}</span>
           </h4>
           <p className="muted" style={{ marginBottom: 8 }}>
             What this agent is allowed to reach for.
           </p>
           <div className="tags" style={{ marginTop: 0 }}>
-            {bot.tools.length === 0 && <span className="muted">No tools assigned.</span>}
-            {bot.tools.map((tool) => (
+            {agent.tools.length === 0 && <span className="muted">No tools assigned.</span>}
+            {agent.tools.map((tool) => (
               <span className="tag" key={tool}>
                 {tool}
               </span>
@@ -89,7 +89,7 @@ export function AgentBrief({ bot }: { bot: Bot }) {
   return (
     <section className="card" style={{ borderColor: 'var(--brand)' }}>
       <div className="between" style={{ marginBottom: 12 }}>
-        <h4 style={{ margin: 0 }}>Editing {bot.name}’s brief</h4>
+        <h4 style={{ margin: 0 }}>Editing {agent.name}’s brief</h4>
       </div>
 
       <Field label="Role">
@@ -129,7 +129,11 @@ export function AgentBrief({ bot }: { bot: Bot }) {
         <button className="btn btn-sm btn-primary" disabled={pending} onClick={save}>
           {pending ? 'Saving…' : 'Save brief'}
         </button>
-        <button className="btn btn-sm btn-ghost" disabled={pending} onClick={() => setEditing(false)}>
+        <button
+          className="btn btn-sm btn-ghost"
+          disabled={pending}
+          onClick={() => setEditing(false)}
+        >
           Cancel
         </button>
       </div>

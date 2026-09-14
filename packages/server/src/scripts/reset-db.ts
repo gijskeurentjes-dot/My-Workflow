@@ -18,7 +18,6 @@ const world = seedWorld(repos);
 
 console.log(`Reset ${config.databasePath}`);
 console.log(
-  `  ${world.islands.length} islands, ${world.bots.length} agents, ` +
-    `${world.projects.length} projects, ${world.tasks.length} tasks`,
+  `  ${world.projects.length} projects, ${world.agents.length} agents, ${world.tasks.length} tasks`,
 );
 db.close();

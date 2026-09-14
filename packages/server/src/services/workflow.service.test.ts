@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { TASK_TYPES } from '@ai-islands/shared';
 import { WorkflowError } from '../errors.js';
-import { botByName, createTestWorld, taskByTitle, type TestWorld } from '../test/helpers.js';
+import { agentByName, createTestWorld, taskByTitle, type TestWorld } from '../test/helpers.js';
 
 describe('projects', () => {
   let w: TestWorld;
@@ -9,7 +9,7 @@ describe('projects', () => {
 
   it('creates a project', () => {
     w = createTestWorld();
-    const { project } = w.workflow.createProject({ name: 'Website refresh', goal: 'Ship by March' });
+    const { project } = w.workflow.createProject({ name: 'Website refresh', description: 'Ship by March' });
 
     expect(project.name).toBe('Website refresh');
     expect(project.status).toBe('active');
@@ -28,18 +28,26 @@ describe('projects', () => {
     expect(project.name).toBe('Renamed');
   });
 
-  it('releases agents when a project is deleted', () => {
+  it('takes the team and the tasks with it when a project is deleted', () => {
     w = createTestWorld();
     const task = taskByTitle(w.repos, 'Break the launch into workstreams');
-    const botId = task.botId!;
+    const projectId = task.projectId;
+    const teamIds = w.repos.agents.findByProject(projectId).map((a) => a.id);
+    expect(teamIds.length).toBeGreaterThan(0);
 
-    w.workflow.deleteProject(task.projectId);
+    w.workflow.deleteProject(projectId);
 
-    // The task is gone, and the agent is not left thinking it still has work.
+    // A project is its island, its team and its work — none of it outlives it.
+    expect(w.repos.projects.findById(projectId)).toBeNull();
     expect(w.repos.tasks.findById(task.id)).toBeNull();
-    const bot = w.repos.bots.findById(botId)!;
-    expect(bot.taskId).toBeNull();
-    expect(bot.status).toBe('idle');
+    for (const id of teamIds) {
+      expect(w.repos.agents.findById(id), 'an agent outlived its project').toBeNull();
+    }
+    // And nothing anywhere else is left pointing at them.
+    for (const other of w.repos.tasks.list()) {
+      if (!other.assignedAgentId) continue;
+      expect(w.repos.agents.findById(other.assignedAgentId)).not.toBeNull();
+    }
   });
 });
 
@@ -47,7 +55,7 @@ describe('tasks', () => {
   let w: TestWorld;
   afterEach(() => w?.close());
 
-  it('routes a new task to the island its kind of work belongs to', () => {
+  it('routes a new task to the building its kind of work belongs to', () => {
     w = createTestWorld();
     const project = w.repos.projects.list()[0]!;
 
@@ -57,15 +65,14 @@ describe('tasks', () => {
       type: 'analysis',
     });
 
-    const island = w.repos.islands.findById(task.islandId)!;
-    expect(island.key).toBe(TASK_TYPES.analysis.island);
+    expect(task.buildingKey).toBe(TASK_TYPES.analysis.building);
     expect(task.status).toBe('backlog');
   });
 
   it('can create, assign and start in one step', () => {
     w = createTestWorld();
     const project = w.repos.projects.list()[0]!;
-    const forge = botByName(w.repos, 'Forge');
+    const forge = agentByName(w.repos, 'Forge');
     // Free Forge from the seeded blocked task first.
     w.workflow.cancelTask(taskByTitle(w.repos, 'Fix the checkout regression').id);
 
@@ -73,13 +80,13 @@ describe('tasks', () => {
       projectId: project.id,
       title: 'Add the annual toggle',
       type: 'coding',
-      botId: forge.id,
+      agentId: forge.id,
       autoStart: true,
     });
 
     expect(task.status).toBe('working');
-    expect(task.botId).toBe(forge.id);
-    expect(w.repos.bots.findById(forge.id)!.status).toBe('working');
+    expect(task.assignedAgentId).toBe(forge.id);
+    expect(w.repos.agents.findById(forge.id)!.status).toBe('working');
   });
 
   it('refuses a task with no title', () => {
@@ -123,7 +130,7 @@ describe('running work', () => {
   it('assigns waiting work and starts it', () => {
     w = createTestWorld();
     const task = taskByTitle(w.repos, 'Build the new pricing page');
-    const forge = botByName(w.repos, 'Forge');
+    const forge = agentByName(w.repos, 'Forge');
     w.workflow.cancelTask(taskByTitle(w.repos, 'Fix the checkout regression').id);
 
     w.workflow.assignTask(task.id, forge.id);
@@ -132,48 +139,51 @@ describe('running work', () => {
     const started = w.repos.tasks.findById(task.id)!;
     expect(started.status).toBe('working');
     expect(started.startedAt).not.toBeNull();
-    expect(w.repos.bots.findById(forge.id)!.taskId).toBe(task.id);
+    expect(w.repos.agents.findById(forge.id)!.currentTaskId).toBe(task.id);
   });
 
   it('starting unassigned work hands it to the agent that owns that kind of task', () => {
     w = createTestWorld();
     const task = taskByTitle(w.repos, 'Summarise the customer interviews');
-    expect(task.botId).toBeNull();
+    expect(task.assignedAgentId).toBeNull();
     // Free Nova, who owns research.
     w.workflow.cancelTask(taskByTitle(w.repos, 'Competitor landscape scan').id);
 
     w.workflow.startTask(task.id);
 
     const started = w.repos.tasks.findById(task.id)!;
-    expect(started.botId).toBe(botByName(w.repos, 'Nova').id);
+    expect(started.assignedAgentId).toBe(agentByName(w.repos, 'Nova').id);
     expect(started.status).toBe('working');
   });
 
-  it('sends an agent to another island when the work is there', () => {
+  it('transfers an agent when the work is on another project', () => {
     w = createTestWorld();
-    const atlas = botByName(w.repos, 'Atlas');
-    const homeIsland = atlas.islandId;
-    const task = taskByTitle(w.repos, 'Build the new pricing page'); // coding → Workshop
+    const atlas = agentByName(w.repos, 'Atlas');
+    const homeProject = atlas.projectId;
+    // A task on a project Atlas is not a member of.
+    const task = w.repos.tasks
+      .list()
+      .find((t) => t.projectId !== homeProject && t.status === 'backlog')!;
 
     w.workflow.assignTask(task.id, atlas.id);
 
-    const travelled = w.repos.bots.findById(atlas.id)!;
-    expect(travelled.islandId).toBe(task.islandId);
-    expect(travelled.islandId).not.toBe(homeIsland);
-    // It arrives at the gate and walks in, rather than appearing at the desk.
-    expect(travelled.locationKey).toBe('gate');
+    const moved = w.repos.agents.findById(atlas.id)!;
+    expect(moved.projectId).toBe(task.projectId);
+    expect(moved.projectId).not.toBe(homeProject);
+    // It arrives at the gate and walks in, rather than appearing at a desk.
+    expect(moved.currentLocation).toBe('gate');
   });
 
   it('reassigning frees the previous agent', () => {
     w = createTestWorld();
     const task = taskByTitle(w.repos, 'Break the launch into workstreams');
-    const atlas = w.repos.bots.findById(task.botId!)!;
-    const nova = botByName(w.repos, 'Nova');
+    const atlas = w.repos.agents.findById(task.assignedAgentId!)!;
+    const nova = agentByName(w.repos, 'Nova');
 
     w.workflow.assignTask(task.id, nova.id);
 
-    expect(w.repos.bots.findById(atlas.id)!.taskId).toBeNull();
-    expect(w.repos.tasks.findById(task.id)!.botId).toBe(nova.id);
+    expect(w.repos.agents.findById(atlas.id)!.currentTaskId).toBeNull();
+    expect(w.repos.tasks.findById(task.id)!.assignedAgentId).toBe(nova.id);
   });
 
   it('pausing freezes progress and the agent stops walking', () => {
@@ -188,9 +198,9 @@ describe('running work', () => {
     expect(after.status).toBe('paused');
     expect(after.progress).toBe(at);
 
-    const bot = w.repos.bots.findById(task.botId!)!;
-    expect(bot.status).toBe('paused');
-    expect(bot.movement).toBeNull();
+    const agent = w.repos.agents.findById(task.assignedAgentId!)!;
+    expect(agent.status).toBe('paused');
+    expect(agent.movement).toBeNull();
   });
 
   it('resuming a paused task continues from where it stopped', () => {
@@ -215,7 +225,7 @@ describe('running work', () => {
   it('cancelling keeps the progress for the record and frees the agent', () => {
     w = createTestWorld();
     const task = taskByTitle(w.repos, 'Break the launch into workstreams');
-    const botId = task.botId!;
+    const botId = task.assignedAgentId!;
     const progress = task.progress;
 
     w.workflow.cancelTask(task.id);
@@ -223,11 +233,11 @@ describe('running work', () => {
     const cancelled = w.repos.tasks.findById(task.id)!;
     expect(cancelled.status).toBe('cancelled');
     expect(cancelled.progress).toBe(progress);
-    expect(cancelled.botId).toBeNull();
+    expect(cancelled.assignedAgentId).toBeNull();
 
-    const bot = w.repos.bots.findById(botId)!;
-    expect(bot.taskId).toBeNull();
-    expect(bot.status).toBe('idle');
+    const agent = w.repos.agents.findById(botId)!;
+    expect(agent.currentTaskId).toBeNull();
+    expect(agent.status).toBe('idle');
   });
 
   it('cancelling withdraws a pending approval request', () => {
@@ -263,7 +273,7 @@ describe('running work', () => {
     const retried = w.repos.tasks.findById(task.id)!;
     expect(retried.status).toBe('working');
     expect(retried.blocker).toBeNull();
-    expect(w.repos.bots.findById(task.botId!)!.status).toBe('working');
+    expect(w.repos.agents.findById(task.assignedAgentId!)!.status).toBe('working');
 
     // And it actually progresses again.
     w.fastForward(15);
@@ -297,7 +307,7 @@ describe('the approval flow', () => {
   it('approving sends the work to the depot and completes it there', () => {
     w = createTestWorld();
     const { task, approval } = pendingFor(w, 'Competitor landscape scan');
-    const crates = w.repos.islands.findById(task.islandId)!.crates;
+    const crates = w.repos.projects.findById(task.projectId)!.crates;
 
     w.workflow.approve(approval.id);
 
@@ -312,8 +322,8 @@ describe('the approval flow', () => {
     expect(arrived, 'the delivery never completed').toBe(true);
 
     expect(w.repos.tasks.findById(task.id)!.completedAt).not.toBeNull();
-    expect(w.repos.islands.findById(task.islandId)!.crates).toBe(crates + 1);
-    expect(w.repos.bots.findById(approval.botId)!.taskId).toBeNull();
+    expect(w.repos.projects.findById(task.projectId)!.crates).toBe(crates + 1);
+    expect(w.repos.agents.findById(approval.agentId)!.currentTaskId).toBeNull();
   });
 
   it('rejecting reopens the work and the agent carries on', () => {
@@ -327,7 +337,7 @@ describe('the approval flow', () => {
     // Knocked back, so there is real work to redo rather than finishing again
     // on the very next tick.
     expect(reopened.progress).toBeLessThan(100);
-    expect(w.repos.bots.findById(approval.botId)!.status).toBe('working');
+    expect(w.repos.agents.findById(approval.agentId)!.status).toBe('working');
 
     const decided = w.repos.approvals.findById(approval.id)!;
     expect(decided.status).toBe('rejected');
@@ -369,7 +379,7 @@ describe('the approval flow', () => {
       title: 'Bump the dependency',
       type: 'coding',
       needsApproval: false,
-      botId: botByName(w.repos, 'Forge').id,
+      agentId: agentByName(w.repos, 'Forge').id,
       autoStart: true,
     });
 
@@ -393,7 +403,7 @@ describe('the approval flow', () => {
 
     const after = w.repos.activity.list({ limit: 500 });
     expect(after.length).toBe(before + 3);
-    expect(after.slice(0, 3).map((e) => e.kind)).toEqual(['cancelled', 'resumed', 'paused']);
+    expect(after.slice(0, 3).map((e) => e.eventType)).toEqual(['cancelled', 'resumed', 'paused']);
   });
 });
 
@@ -422,7 +432,7 @@ describe('no approval request is ever left dangling', () => {
   it('withdraws it when the agent is reassigned to other work', () => {
     w = createTestWorld();
     const waiting = taskByTitle(w.repos, 'Competitor landscape scan');
-    const nova = w.repos.bots.findById(waiting.botId!)!;
+    const nova = w.repos.agents.findById(waiting.assignedAgentId!)!;
     const other = taskByTitle(w.repos, 'Summarise the customer interviews');
 
     w.workflow.assignTask(other.id, nova.id);
@@ -493,7 +503,7 @@ describe('no approval request is ever left dangling', () => {
       const pending = w.repos.approvals.list({ status: 'pending' });
       if (pending[0]) w.workflow.approve(pending[0].id);
 
-      const bots = w.repos.bots.list();
+      const bots = w.repos.agents.list();
       const open = w.repos.tasks.list({ status: 'backlog' });
       if (open[0] && bots[round % bots.length]) {
         w.workflow.assignTask(open[0].id, bots[round % bots.length]!.id);

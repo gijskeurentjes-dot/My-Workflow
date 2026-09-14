@@ -1,5 +1,5 @@
 import { mix } from './color.js';
-import type { BiomeKey, IslandKey } from './types.js';
+import type { BiomeKey } from './types.js';
 
 /**
  * A biome is a place, not a hue: it carries its own flora, architecture and
@@ -230,64 +230,49 @@ export const BIOMES: Record<BiomeKey, Biome> = Object.fromEntries(
   }),
 ) as Record<BiomeKey, Biome>;
 
+export const BIOME_KEYS = Object.keys(BIOMES) as BiomeKey[];
+
 /**
- * The starting world: five islands, each the home of one agent. Seeds are fixed
- * so an island's coastline is the same on every machine and every reset.
+ * Appearance for a newly created project.
+ *
+ * Biomes cycle so consecutive projects look different, and the seed is derived
+ * from the project count rather than random, so the same nth project always
+ * draws the same island.
  */
-export interface IslandDefinition {
-  key: IslandKey;
-  name: string;
-  blurb: string;
+export function appearanceForIndex(index: number): {
   biome: BiomeKey;
   seed: number;
   layout: { col: number; row: number };
+} {
+  const biomes = BIOME_KEYS;
+  return {
+    biome: biomes[index % biomes.length]!,
+    // Spread across the seed space so neighbouring projects do not share a
+    // coastline; the multiplier is arbitrary but fixed.
+    seed: 1.2 + ((index * 2.7) % 9),
+    layout: { col: index % 3, row: Math.floor(index / 3) },
+  };
 }
 
-export const ISLAND_DEFS: IslandDefinition[] = [
+/** Suggested names for the first few projects, used only by the demo seed. */
+export const DEMO_PROJECTS: {
+  name: string;
+  description: string;
+  color: string;
+}[] = [
   {
-    key: 'headquarters',
-    name: 'Headquarters',
-    blurb: 'Where projects are broken down, delegated and signed off.',
-    biome: 'civic',
-    seed: 1.2,
-    layout: { col: 0, row: 0 },
+    name: 'Q4 Product Launch',
+    description: 'Ship the new pricing page and the launch deck before the quarter closes.',
+    color: '#f4834f',
   },
   {
-    key: 'research-library',
-    name: 'Research Library',
-    blurb: 'Sources, reading and written research reports.',
-    biome: 'scholar',
-    seed: 3.7,
-    layout: { col: 1, row: 0 },
+    name: 'Market Research Refresh',
+    description: 'Understand where we sit against the three closest competitors.',
+    color: '#7a63d8',
   },
   {
-    key: 'workshop',
-    name: 'Workshop',
-    blurb: 'Code, builds, tests and technical deliverables.',
-    biome: 'forge',
-    seed: 5.1,
-    layout: { col: 2, row: 0 },
-  },
-  {
-    key: 'presentation-studio',
-    name: 'Presentation Studio',
-    blurb: 'Slide decks, storylines, charts and speaker notes.',
-    biome: 'studio',
-    seed: 8.4,
-    layout: { col: 0, row: 1 },
-  },
-  {
-    key: 'data-workshop',
-    name: 'Data Workshop',
-    blurb: 'Workbooks, formulas, models and dashboards.',
-    biome: 'ledger',
-    seed: 6.3,
-    layout: { col: 1, row: 1 },
+    name: 'FY26 Budget',
+    description: 'Build a defensible baseline and a lean scenario.',
+    color: '#3aa85f',
   },
 ];
-
-export const ISLAND_KEYS = ISLAND_DEFS.map((d) => d.key);
-
-export const ISLAND_DEF_BY_KEY: Record<IslandKey, IslandDefinition> = Object.fromEntries(
-  ISLAND_DEFS.map((d) => [d.key, d]),
-) as Record<IslandKey, IslandDefinition>;

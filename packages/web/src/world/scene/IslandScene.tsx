@@ -1,5 +1,6 @@
 import { useMemo } from 'react';
 import {
+  APPROVAL_PLOT,
   BIOMES,
   CY,
   ELEV,
@@ -10,25 +11,29 @@ import {
   findPath,
   generateTerrain,
   iso,
-  type Island,
   type PlotKey,
+  type Project,
+  type Task,
 } from '@ai-islands/shared';
-import type { BotDisplay } from '../selectors.js';
-import { BotSprite } from './BotSprite.js';
+import type { AgentDisplay } from '../selectors.js';
+import { AgentSprite } from './AgentSprite.js';
 import { Building } from './Buildings.js';
 import { Decor, Roads, Terrain } from './Terrain.js';
 
 export interface IslandSceneProps {
-  island: Island;
-  bots: BotDisplay[];
+  /** A project is an island; its appearance draws the terrain. */
+  project: Project;
+  agents: AgentDisplay[];
+  /** This project's tasks, used to show waiting work on the island. */
+  tasks?: Task[];
   /** Shared animation clock, in ms. */
   clock: number;
   theme: 'light' | 'dark';
   /** Mini renders the small card version: no labels, no props, less detail. */
   mini?: boolean;
-  selectedBotId?: string | null;
+  selectedAgentId?: string | null;
   selectedPlot?: PlotKey | null;
-  onSelectBot?: (botId: string) => void;
+  onSelectAgent?: (agentId: string) => void;
   onSelectPlot?: (plot: PlotKey) => void;
   onClearSelection?: () => void;
 }
@@ -41,30 +46,37 @@ export interface IslandSceneProps {
  * the state; the panels beside it are the complete way.
  */
 export function IslandScene({
-  island,
-  bots,
+  project,
+  agents,
+  tasks = [],
   clock,
   theme,
   mini = false,
-  selectedBotId = null,
+  selectedAgentId = null,
   selectedPlot = null,
-  onSelectBot,
+  onSelectAgent,
   onSelectPlot,
   onClearSelection,
 }: IslandSceneProps) {
   const tw = mini ? 34 : TILE_W;
   const th = mini ? 17 : TILE_H;
   const sc = tw / TILE_W;
-  const biome = BIOMES[island.biome];
+  const biome = BIOMES[project.appearance.biome];
   const pal = biome[theme];
+  const seed = project.appearance.seed;
 
   // Which plots have someone working at them, so their lights come on.
   const activePlots = new Set<PlotKey>();
   const attentionPlots = new Set<PlotKey>();
-  for (const d of bots) {
-    if (d.movement === 'working') activePlots.add(d.bot.locationKey);
-    if (d.bot.status === 'waiting_approval' && !d.bot.movement) attentionPlots.add('approval');
+  for (const d of agents) {
+    if (d.movement === 'working') activePlots.add(d.agent.currentLocation);
+    if (d.agent.status === 'waiting_approval' && !d.agent.movement) {
+      attentionPlots.add(APPROVAL_PLOT);
+    }
   }
+
+  // Waiting work is pinned at the meeting circle, so a full board is visible.
+  const backlog = tasks.filter((t) => t.status === 'backlog').length;
 
   // Painter's order: anything nearer the viewer is drawn last.
   const scenery = [
@@ -74,8 +86,8 @@ export function IslandScene({
       c: PLOTS[key].cell.c,
       r: PLOTS[key].cell.r,
     })),
-    ...bots.map((d) => ({
-      kind: 'bot' as const,
+    ...agents.map((d) => ({
+      kind: 'agent' as const,
       display: d,
       c: d.position.c,
       r: d.position.r,
@@ -84,7 +96,7 @@ export function IslandScene({
 
   // The viewBox has to contain the terrain, the lagoon and the rock underside.
   const box = useMemo(() => {
-    const cells = generateTerrain(island.seed);
+    const cells = generateTerrain(seed);
     let x0 = Infinity;
     let x1 = -Infinity;
     let y0 = Infinity;
@@ -102,9 +114,9 @@ export function IslandScene({
     const top = (mini ? 16 : 52) + 1.1 * th;
     const bottom = (mini ? 8 : 20) + 1.1 * th + (mini ? 132 : 235) * sc;
     return { x0: x0 - padX, x1: x1 + padX, y0: y0 - top, y1: y1 + bottom, floor: y1 };
-  }, [island.seed, tw, th, sc, mini]);
+  }, [seed, tw, th, sc, mini]);
 
-  const haloId = `halo-${island.id}`;
+  const haloId = `halo-${project.id}`;
 
   return (
     <svg
@@ -114,7 +126,7 @@ export function IslandScene({
       preserveAspectRatio="xMidYMid meet"
       onClick={onClearSelection}
       role="img"
-      aria-label={`${island.name}: ${bots.length === 0 ? 'no agents' : bots.map((d) => `${d.bot.name} ${d.doing}`).join('. ')}`}
+      aria-label={`${project.name}: ${agents.length === 0 ? 'nobody on this island' : agents.map((d) => `${d.agent.name} ${d.doing}`).join('. ')}`}
     >
       <defs>
         <radialGradient id={haloId} cx="50%" cy="42%" r="60%">
@@ -139,10 +151,10 @@ export function IslandScene({
         opacity={mini ? '0.3' : '0.38'}
       />
 
-      <Terrain seed={island.seed} pal={pal} tw={tw} th={th} sc={sc} mini={mini} />
-      <Roads seed={island.seed} pal={pal} tw={tw} th={th} sc={sc} mini={mini} />
+      <Terrain seed={seed} pal={pal} tw={tw} th={th} sc={sc} mini={mini} />
+      <Roads seed={seed} pal={pal} tw={tw} th={th} sc={sc} mini={mini} />
       <Decor
-        seed={island.seed}
+        seed={seed}
         pal={pal}
         tree={biome.tree}
         props={biome.props}
@@ -154,10 +166,10 @@ export function IslandScene({
 
       {/* Route lines make the link between a task and the walk it causes visible. */}
       {!mini &&
-        bots
-          .filter((d) => d.bot.movement)
+        agents
+          .filter((d) => d.agent.movement)
           .map((d) => {
-            const move = d.bot.movement!;
+            const move = d.agent.movement!;
             const col = d.profile.color.base;
             const pts = [
               iso(d.position.c, d.position.r, tw, th),
@@ -169,7 +181,7 @@ export function IslandScene({
             const end = pts[pts.length - 1]!;
 
             return (
-              <g key={`route-${d.bot.id}`} style={{ pointerEvents: 'none' }}>
+              <g key={`route-${d.agent.id}`} style={{ pointerEvents: 'none' }}>
                 <path
                   d={path}
                   fill="none"
@@ -203,23 +215,24 @@ export function IslandScene({
             th={th}
             sc={sc}
             mini={mini}
-            crates={island.crates}
+            crates={project.crates}
             active={activePlots.has(item.key)}
             needsAttention={attentionPlots.has(item.key)}
+            backlog={backlog}
             selected={selectedPlot === item.key}
             {...(onSelectPlot ? { onSelect: onSelectPlot } : {})}
           />
         ) : (
-          <BotSprite
-            key={item.display.bot.id}
+          <AgentSprite
+            key={item.display.agent.id}
             display={item.display}
             clock={clock}
             tw={tw}
             th={th}
             sc={sc}
             mini={mini}
-            selected={selectedBotId === item.display.bot.id}
-            {...(onSelectBot ? { onSelect: onSelectBot } : {})}
+            selected={selectedAgentId === item.display.agent.id}
+            {...(onSelectAgent ? { onSelect: onSelectAgent } : {})}
           />
         ),
       )}

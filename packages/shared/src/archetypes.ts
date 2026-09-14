@@ -1,24 +1,30 @@
-import type { BotKey, BotProfile, TaskType, TaskTypeInfo } from './types.js';
+import { PLOTS } from './geometry.js';
+import type { AgentArchetype, ArchetypeProfile, PlotKey, TaskType, TaskTypeInfo } from './types.js';
 
 /**
- * The five agents. Each profile is deliberately shaped like something a real
- * agent would need: responsibilities read as a system prompt, `tools` as a
- * tool list, and `approvalRules` as the guardrails it is held to. Swapping the
- * mock engine for a real one means reading these, not rewriting them.
+ * The kinds of worker you can hire onto a project.
+ *
+ * An archetype is a starting point, not a cage: it sets how the agent looks,
+ * what it naturally handles, and the brief it begins with. Name, role,
+ * instructions and tools are all editable per agent afterwards, so two projects
+ * can run very different Developers.
+ *
+ * The `responsibilities` and `approvalRules` here are what a new agent's
+ * `instructions` are built from — the text a real engine sends as its system
+ * prompt.
  */
-export const BOT_PROFILES: Record<BotKey, BotProfile> = {
-  atlas: {
-    key: 'atlas',
-    name: 'Atlas',
+export const ARCHETYPES: Record<AgentArchetype, ArchetypeProfile> = {
+  pm: {
+    key: 'pm',
     title: 'Project Manager',
-    homeIsland: 'headquarters',
+    defaultName: 'Atlas',
     icon: '\u{1F4CB}',
     color: { base: '#4a8ff0', dark: '#2c62b6', light: '#a8caf8' },
     tagline: 'Breaks projects into tasks, delegates the work and brings you the decisions.',
     responsibilities: [
       'Break projects down into concrete, assignable tasks',
       'Delegate each task to the right specialist',
-      'Track progress and deadlines across every project',
+      'Track progress and deadlines across the project',
       'Identify blockers and stalled work early',
       'Produce project summaries and status reports',
     ],
@@ -35,13 +41,13 @@ export const BOT_PROFILES: Record<BotKey, BotProfile> = {
       'Drafting the status summary…',
     ],
     handles: ['planning', 'review'],
+    home: 'hq',
   },
 
-  nova: {
-    key: 'nova',
-    name: 'Nova',
+  researcher: {
+    key: 'researcher',
     title: 'Researcher',
-    homeIsland: 'research-library',
+    defaultName: 'Nova',
     icon: '\u{1F50D}',
     color: { base: '#8b6ce0', dark: '#5b42a6', light: '#c7b4f2' },
     tagline: 'Searches, reads and verifies — then turns sources into something readable.',
@@ -65,13 +71,13 @@ export const BOT_PROFILES: Record<BotKey, BotProfile> = {
       'Summarising the findings…',
     ],
     handles: ['research'],
+    home: 'library',
   },
 
-  forge: {
-    key: 'forge',
-    name: 'Forge',
+  developer: {
+    key: 'developer',
     title: 'Developer',
-    homeIsland: 'workshop',
+    defaultName: 'Forge',
     icon: '\u{1F4BB}',
     color: { base: '#f2883f', dark: '#b85f1e', light: '#f9c795' },
     tagline: 'Builds the frontend and the backend, then proves it works.',
@@ -95,13 +101,13 @@ export const BOT_PROFILES: Record<BotKey, BotProfile> = {
       'Building a preview…',
     ],
     handles: ['coding'],
+    home: 'workshop',
   },
 
-  slidebuilder: {
-    key: 'slidebuilder',
-    name: 'Slidebuilder',
+  presenter: {
+    key: 'presenter',
     title: 'Presentation Designer',
-    homeIsland: 'presentation-studio',
+    defaultName: 'Slidebuilder',
     icon: '\u{1F4CA}',
     color: { base: '#2bb3a3', dark: '#187a6f', light: '#96ded5' },
     tagline: 'Turns research and numbers into a deck people can actually follow.',
@@ -125,13 +131,13 @@ export const BOT_PROFILES: Record<BotKey, BotProfile> = {
       'Adding speaker notes…',
     ],
     handles: ['writing'],
+    home: 'studio',
   },
 
-  'excel-expert': {
-    key: 'excel-expert',
-    name: 'Excel Expert',
+  analyst: {
+    key: 'analyst',
     title: 'Spreadsheet & Data Analyst',
-    homeIsland: 'data-workshop',
+    defaultName: 'Excel Expert',
     icon: '\u{1F9EE}',
     color: { base: '#3aa85f', dark: '#1f6e3c', light: '#9fdcb2' },
     tagline: 'Builds the workbook, models the numbers — and checks the formulas twice.',
@@ -155,69 +161,98 @@ export const BOT_PROFILES: Record<BotKey, BotProfile> = {
       'Reconciling the totals…',
     ],
     handles: ['analysis'],
+    home: 'data',
   },
 };
 
-export const BOT_KEYS = Object.keys(BOT_PROFILES) as BotKey[];
+export const ARCHETYPE_KEYS = Object.keys(ARCHETYPES) as AgentArchetype[];
 
-export const BOT_LIST: BotProfile[] = BOT_KEYS.map((k) => BOT_PROFILES[k]);
+export const ARCHETYPE_LIST: ArchetypeProfile[] = ARCHETYPE_KEYS.map((k) => ARCHETYPES[k]);
 
 /**
  * Task type decides where the work happens and who does it. This mapping is the
  * single source of truth for both — the server routes tasks with it, and the
- * world view uses it to explain why a bot walked somewhere.
+ * world view uses it to explain why an agent walked somewhere.
  */
 export const TASK_TYPES: Record<TaskType, TaskTypeInfo> = {
   planning: {
     key: 'planning',
     label: 'Planning',
     icon: '\u{1F5D3}️',
-    island: 'headquarters',
+    building: 'hq',
     verb: 'planning',
+    owner: 'pm',
   },
   research: {
     key: 'research',
     label: 'Research',
     icon: '\u{1F50E}',
-    island: 'research-library',
+    building: 'library',
     verb: 'researching',
+    owner: 'researcher',
   },
   coding: {
     key: 'coding',
     label: 'Development',
     icon: '\u{1F4BB}',
-    island: 'workshop',
+    building: 'workshop',
     verb: 'building',
+    owner: 'developer',
   },
   writing: {
     key: 'writing',
     label: 'Presentation',
     icon: '\u{1F4D1}',
-    island: 'presentation-studio',
+    building: 'studio',
     verb: 'drafting',
+    owner: 'presenter',
   },
   analysis: {
     key: 'analysis',
     label: 'Data & analysis',
     icon: '\u{1F4C9}',
-    island: 'data-workshop',
+    building: 'data',
     verb: 'modelling',
+    owner: 'analyst',
   },
   review: {
     key: 'review',
     label: 'Review',
     icon: '\u{1F9D0}',
-    island: 'headquarters',
+    building: 'hq',
     verb: 'reviewing',
+    owner: 'pm',
   },
 };
 
 export const TASK_TYPE_KEYS = Object.keys(TASK_TYPES) as TaskType[];
 
-/** The bot that naturally owns a given kind of work. */
-export function defaultBotForTaskType(type: TaskType): BotKey {
-  const match = BOT_LIST.find((b) => b.handles.includes(type));
-  // Every task type is claimed by exactly one bot, but fall back to the PM
-  // rather than throwing if that ever stops being true.
-  return match ? match.key : 'atlas';
+/** Which building a kind of work is carried out at. */
+export const buildingForTaskType = (type: TaskType): PlotKey => TASK_TYPES[type].building;
+
+/** The archetype that naturally owns a given kind of work. */
+export const archetypeForTaskType = (type: TaskType): AgentArchetype => TASK_TYPES[type].owner;
+
+/**
+ * Build a new agent's starting instructions from its archetype.
+ *
+ * This is the text a real engine sends as the system prompt, so it is assembled
+ * rather than hardcoded: edit an agent afterwards and the stored value wins.
+ */
+export function defaultInstructions(profile: ArchetypeProfile): string {
+  return [
+    profile.tagline,
+    '',
+    'Responsibilities:',
+    ...profile.responsibilities.map((r) => `- ${r}`),
+    '',
+    'Always check with the user before:',
+    ...profile.approvalRules.map((r) => `- ${r}`),
+  ].join('\n');
 }
+
+/** Where this archetype waits and works by default. */
+export const homePlotFor = (archetype: AgentArchetype): PlotKey => {
+  const home = ARCHETYPES[archetype].home;
+  return PLOTS[home] ? home : 'rest';
+};

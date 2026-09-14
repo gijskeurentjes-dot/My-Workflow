@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { BOT_PROFILES, ISLAND_DEFS, TASK_TYPES } from '@ai-islands/shared';
+import { ARCHETYPES, TASK_TYPES } from '@ai-islands/shared';
 import { createTestWorld, type TestWorld } from '../test/helpers.js';
 import { seedWorld } from './seed.js';
 
@@ -7,42 +7,65 @@ describe('the demo world', () => {
   let w: TestWorld;
   afterEach(() => w?.close());
 
-  it('creates one island per work area', () => {
+  it('creates a project for every island, each with its own appearance', () => {
     w = createTestWorld();
-    const islands = w.repos.islands.list();
-    expect(islands).toHaveLength(ISLAND_DEFS.length);
-    expect(islands.map((i) => i.key).sort()).toEqual(ISLAND_DEFS.map((d) => d.key).sort());
-  });
+    const projects = w.repos.projects.list();
+    expect(projects.length).toBeGreaterThanOrEqual(3);
 
-  it('gives every agent a home island', () => {
-    w = createTestWorld();
-    const bots = w.repos.bots.list();
-    expect(bots).toHaveLength(5);
+    // Two projects sharing a seed would draw the same island.
+    const seeds = new Set(projects.map((p) => p.appearance.seed));
+    expect(seeds.size).toBe(projects.length);
 
-    for (const bot of bots) {
-      const island = w.repos.islands.findById(bot.islandId);
-      expect(island, `${bot.name} has no island`).not.toBeNull();
-      expect(island!.key).toBe(BOT_PROFILES[bot.key].homeIsland);
+    for (const project of projects) {
+      expect(project.appearance.biome).toBeTruthy();
+      expect(project.description.length).toBeGreaterThan(0);
     }
   });
 
-  it('routes every task to the island its type belongs to', () => {
+  it('gives every project its own team, and teams differ in shape', () => {
+    w = createTestWorld();
+    const projects = w.repos.projects.list();
+
+    const sizes = projects.map((p) => w.repos.agents.findByProject(p.id).length);
+    for (const size of sizes) expect(size).toBeGreaterThan(0);
+    // The point of per-project teams is that they are not all identical.
+    expect(new Set(sizes).size).toBeGreaterThan(1);
+  });
+
+  it('gives every agent a project that exists', () => {
+    w = createTestWorld();
+    for (const agent of w.repos.agents.list()) {
+      expect(w.repos.projects.findById(agent.projectId), `${agent.name} has no project`).not.toBeNull();
+      expect(ARCHETYPES[agent.archetype]).toBeDefined();
+    }
+  });
+
+  it('routes every task to the building its kind of work belongs to', () => {
     w = createTestWorld();
     for (const task of w.repos.tasks.list()) {
-      const island = w.repos.islands.findById(task.islandId);
-      expect(island!.key).toBe(TASK_TYPES[task.type].island);
+      expect(task.buildingKey).toBe(TASK_TYPES[task.type].building);
+    }
+  });
+
+  it('keeps a task and its agent on the same project', () => {
+    w = createTestWorld();
+    for (const task of w.repos.tasks.list()) {
+      if (!task.assignedAgentId) continue;
+      const agent = w.repos.agents.findById(task.assignedAgentId);
+      expect(agent, `${task.title} points at a missing agent`).not.toBeNull();
+      expect(agent!.projectId).toBe(task.projectId);
     }
   });
 
   it('shows every state the UI has to render', () => {
     w = createTestWorld();
-    const botStatuses = new Set(w.repos.bots.list().map((b) => b.status));
+    const agentStatuses = new Set(w.repos.agents.list().map((a) => a.status));
     // A first-time visitor should see someone working, someone waiting on them,
     // someone blocked and someone paused without touching anything.
-    expect(botStatuses).toContain('working');
-    expect(botStatuses).toContain('waiting_approval');
-    expect(botStatuses).toContain('failed');
-    expect(botStatuses).toContain('paused');
+    expect(agentStatuses).toContain('working');
+    expect(agentStatuses).toContain('waiting_approval');
+    expect(agentStatuses).toContain('failed');
+    expect(agentStatuses).toContain('paused');
 
     const taskStatuses = new Set(w.repos.tasks.list().map((t) => t.status));
     expect(taskStatuses).toContain('backlog');
@@ -53,32 +76,31 @@ describe('the demo world', () => {
     w = createTestWorld();
     const pending = w.repos.approvals.list({ status: 'pending' });
     expect(pending).toHaveLength(1);
-
-    const task = w.repos.tasks.findById(pending[0]!.taskId);
-    expect(task?.status).toBe('waiting_approval');
+    expect(w.repos.tasks.findById(pending[0]!.taskId)?.status).toBe('waiting_approval');
   });
 
-  it('keeps bot and task agreed on who holds what', () => {
+  it('keeps agent and task agreed on who holds what', () => {
     w = createTestWorld();
-    for (const bot of w.repos.bots.list()) {
-      if (!bot.taskId) continue;
-      const task = w.repos.tasks.findById(bot.taskId);
-      expect(task, `${bot.name} holds a task that does not exist`).not.toBeNull();
-      expect(task!.botId).toBe(bot.id);
+    for (const agent of w.repos.agents.list()) {
+      if (!agent.currentTaskId) continue;
+      const task = w.repos.tasks.findById(agent.currentTaskId);
+      expect(task, `${agent.name} holds a task that does not exist`).not.toBeNull();
+      expect(task!.assignedAgentId).toBe(agent.id);
     }
-    // And the reverse: a live task's bot points back at it.
     for (const task of w.repos.tasks.list()) {
-      if (!task.botId || task.status === 'completed') continue;
-      const bot = w.repos.bots.findById(task.botId);
-      expect(bot!.taskId).toBe(task.id);
+      if (!task.assignedAgentId || task.status === 'completed') continue;
+      expect(w.repos.agents.findById(task.assignedAgentId)!.currentTaskId).toBe(task.id);
     }
   });
 
-  it('crates the work that was already delivered', () => {
+  it('crates delivered work against the project it belongs to', () => {
     w = createTestWorld();
-    const crates = w.repos.islands.list().reduce((sum, i) => sum + i.crates, 0);
-    const completed = w.repos.tasks.list({ status: 'completed' }).length;
-    expect(crates).toBe(completed);
+    for (const project of w.repos.projects.list()) {
+      const completed = w.repos.tasks
+        .list({ projectId: project.id })
+        .filter((t) => t.status === 'completed').length;
+      expect(project.crates, `${project.name} crate count`).toBe(completed);
+    }
   });
 
   it('is reproducible — a reset replays the same world', () => {
@@ -86,7 +108,7 @@ describe('the demo world', () => {
     const before = w.repos.tasks.list().map((t) => t.title).sort();
 
     w.repos.reset();
-    expect(w.repos.islands.list()).toHaveLength(0);
+    expect(w.repos.projects.list()).toHaveLength(0);
 
     // Re-seed and compare shape, not ids, which are random by design.
     seedWorld(w.repos, w.now());

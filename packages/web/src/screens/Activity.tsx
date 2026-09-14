@@ -14,7 +14,7 @@ export function Activity() {
   const events = useMemo(
     () =>
       world.activity.filter(
-        (e) => (!botId || e.botId === botId) && (!projectId || e.projectId === projectId),
+        (e) => (!botId || e.agentId === botId) && (!projectId || e.projectId === projectId),
       ),
     [world.activity, botId, projectId],
   );
@@ -36,7 +36,7 @@ export function Activity() {
           <span className="eyebrow">Agent</span>
           <select className="btn btn-sm" value={botId} onChange={(e) => setBotId(e.target.value)}>
             <option value="">All agents</option>
-            {world.bots.map((b) => (
+            {world.agents.map((b) => (
               <option key={b.id} value={b.id}>
                 {b.name}
               </option>

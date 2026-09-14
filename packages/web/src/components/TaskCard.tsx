@@ -1,14 +1,15 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
-  BOT_PROFILES,
+  ARCHETYPES,
+  PLOTS,
   PRIORITY_LABEL,
   PRIORITY_TONE,
   TASK_PRIORITIES,
   TASK_TYPES,
-  defaultBotForTaskType,
+  archetypeForTaskType,
   isTerminalTaskStatus,
-  type Bot,
+  type Agent,
   type Task,
   type TaskPriority,
   type WorldSnapshot,
@@ -30,7 +31,6 @@ export function TaskCard({
   task,
   now,
   showProject = true,
-  showIsland = false,
   showStatus = true,
   compact = false,
 }: {
@@ -38,7 +38,6 @@ export function TaskCard({
   task: Task;
   now: number;
   showProject?: boolean;
-  showIsland?: boolean;
   /** Off inside a status-grouped column, where the heading already says it. */
   showStatus?: boolean;
   compact?: boolean;
@@ -76,12 +75,14 @@ export function TaskCard({
           ? 'warn'
           : 'ok';
 
-  const preferredKey = defaultBotForTaskType(task.type);
+  // Only this project's team can take the work, so that is who is offered.
+  const team = world.agents.filter((a) => a.projectId === task.projectId);
+  const preferred = archetypeForTaskType(task.type);
 
   return (
     <article className="task">
       <div className="task-t">{task.title}</div>
-      {task.notes && !compact && <div className="task-n">{task.notes}</div>}
+      {task.description && !compact && <div className="task-n">{task.description}</div>}
 
       {task.blocker && (
         <div className="task-n" style={{ color: 'var(--bad)', fontWeight: 600, marginTop: 6 }}>
@@ -91,7 +92,7 @@ export function TaskCard({
 
       <div className="tags">
         {showStatus && <StatusPill status={task.status} />}
-        {(task.priority !== 'normal' || changingPriority) && (
+        {task.priority !== 'normal' && (
           <span className={`pill tone-${PRIORITY_TONE[task.priority]}`}>
             <i aria-hidden="true" />
             {PRIORITY_LABEL[task.priority]}
@@ -110,11 +111,14 @@ export function TaskCard({
         <span className="tag">
           {TASK_TYPES[task.type].icon} {TASK_TYPES[task.type].label}
         </span>
-        {showIsland && d.island && <span className="tag">{d.island.name}</span>}
-        {d.bot ? (
-          <Link to={`/bots/${d.bot.id}`} className="tag" style={{ textDecoration: 'none' }}>
-            <Avatar botKey={d.bot.key} size={14} />
-            {d.bot.name}
+        {/* Where on the island it happens. */}
+        <span className="tag">
+          {PLOTS[task.buildingKey].icon} {PLOTS[task.buildingKey].label}
+        </span>
+        {d.agent ? (
+          <Link to={`/agents/${d.agent.id}`} className="tag" style={{ textDecoration: 'none' }}>
+            <Avatar archetype={d.agent.archetype} size={14} />
+            {d.agent.name}
           </Link>
         ) : (
           <span className="tag" style={{ color: 'var(--ink-3)' }}>
@@ -154,7 +158,11 @@ export function TaskCard({
             className="btn btn-sm btn-primary"
             disabled={isPending(`approve:${approval.id}`)}
             onClick={() =>
-              run(`approve:${approval.id}`, () => api.approve(approval.id), 'Approved — on its way to the depot')
+              run(
+                `approve:${approval.id}`,
+                () => api.approve(approval.id),
+                'Approved — on its way to the depot',
+              )
             }
           >
             ✓ Approve
@@ -219,7 +227,7 @@ export function TaskCard({
         )}
         {!isTerminalTaskStatus(task.status) && (
           <button className="btn btn-sm" disabled={busy} onClick={() => setAssigning((v) => !v)}>
-            {d.bot ? 'Reassign' : 'Assign'}
+            {d.agent ? 'Reassign' : 'Assign'}
           </button>
         )}
         {!isTerminalTaskStatus(task.status) &&
@@ -285,12 +293,13 @@ export function TaskCard({
 
       {assigning && (
         <AssignPicker
-          bots={world.bots}
-          currentBotId={task.botId}
-          preferredKey={preferredKey}
+          team={team}
+          projectName={d.project?.name ?? 'this project'}
+          currentAgentId={task.assignedAgentId}
+          preferred={preferred}
           disabled={busy}
-          onPick={async (botId) => {
-            const ok = await run(key('assign'), () => api.assignTask(task.id, botId));
+          onPick={async (agentId) => {
+            const ok = await run(key('assign'), () => api.assignTask(task.id, agentId));
             if (ok) setAssigning(false);
           }}
           onCancel={() => setAssigning(false)}
@@ -301,24 +310,26 @@ export function TaskCard({
 }
 
 /**
- * Pick an agent for a task.
+ * Pick someone from this project's team.
  *
- * Any agent can take any task — one given work on another island travels there.
- * The natural owner is marked so the easy choice is also the obvious one.
+ * Only the project's own agents are offered: a team is what a project has, and
+ * borrowing someone from elsewhere is a transfer, done from their own page.
  */
 function AssignPicker({
-  bots,
-  currentBotId,
-  preferredKey,
+  team,
+  projectName,
+  currentAgentId,
+  preferred,
   disabled,
   onPick,
   onCancel,
 }: {
-  bots: Bot[];
-  currentBotId: string | null;
-  preferredKey: string;
+  team: Agent[];
+  projectName: string;
+  currentAgentId: string | null;
+  preferred: string;
   disabled: boolean;
-  onPick: (botId: string) => void;
+  onPick: (agentId: string) => void;
   onCancel: () => void;
 }) {
   return (
@@ -329,26 +340,32 @@ function AssignPicker({
           Cancel
         </button>
       </div>
-      {bots.map((bot) => {
-        const profile = BOT_PROFILES[bot.key];
-        const isCurrent = bot.id === currentBotId;
+
+      {team.length === 0 && (
+        <p className="muted" style={{ margin: 0 }}>
+          Nobody is on {projectName} yet. Hire someone from the project page.
+        </p>
+      )}
+
+      {team.map((agent) => {
+        const isCurrent = agent.id === currentAgentId;
         return (
           <button
-            key={bot.id}
+            key={agent.id}
             className="assign-option"
             disabled={disabled || isCurrent}
-            onClick={() => onPick(bot.id)}
+            onClick={() => onPick(agent.id)}
           >
-            <Avatar botKey={bot.key} size={26} />
+            <Avatar archetype={agent.archetype} size={26} />
             <span style={{ flex: 1, minWidth: 0, textAlign: 'left' }}>
-              <b style={{ fontSize: 12.5, display: 'block' }}>{bot.name}</b>
+              <b style={{ fontSize: 12.5, display: 'block' }}>{agent.name}</b>
               <span className="bot-role">
-                {profile.title}
-                {bot.key === preferredKey ? ' · natural owner' : ''}
+                {agent.role || ARCHETYPES[agent.archetype].title}
+                {agent.archetype === preferred ? ' · natural owner' : ''}
                 {isCurrent ? ' · already assigned' : ''}
               </span>
             </span>
-            <StatusPill status={bot.status} />
+            <StatusPill status={agent.status} />
           </button>
         );
       })}

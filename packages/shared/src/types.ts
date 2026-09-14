@@ -1,4 +1,4 @@
-import type { BotStatus, MovementState, TaskStatus } from './status.js';
+import type { AgentStatus, MovementState, TaskStatus } from './status.js';
 
 /** Identifiers are opaque strings everywhere; the database picks the format. */
 export type Id = string;
@@ -7,130 +7,121 @@ export type Id = string;
 export type Timestamp = number;
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Islands — the work areas that make up the visual world
+// Projects — one project is one island
 // ─────────────────────────────────────────────────────────────────────────────
 
-/** The kind of work an island is built for. Decides its resident bot. */
-export type IslandKey =
-  | 'headquarters'
-  | 'research-library'
-  | 'workshop'
-  | 'presentation-studio'
-  | 'data-workshop';
+export type ProjectStatus = 'active' | 'paused' | 'archived';
 
-export interface Island {
-  id: Id;
-  /** Stable key used by the renderer to pick terrain, biome and buildings. */
-  key: IslandKey;
-  name: string;
-  /** One line on what happens here, shown on the island card. */
-  blurb: string;
+export type BiomeKey = 'civic' | 'scholar' | 'forge' | 'studio' | 'ledger';
+
+/**
+ * How a project's island looks.
+ *
+ * Fixed when the project is created, so an island someone has learned to
+ * recognise never changes shape underneath them.
+ */
+export interface IslandAppearance {
   biome: BiomeKey;
-  /** Seeds the terrain generator, so an island's shape never changes. */
+  /** Seeds the terrain generator. The same seed always draws the same island. */
   seed: number;
-  /** Where the island sits on the world map, in grid columns/rows. */
+  /** Where the island sits on the world map, in grid columns and rows. */
   layout: { col: number; row: number };
-  /** Count of delivered work crates stacked at the depot. */
+}
+
+export interface Project {
+  id: Id;
+  name: string;
+  description: string;
+  status: ProjectStatus;
+  /** Accent colour used on cards and task chips. */
+  color: string;
+  appearance: IslandAppearance;
+  /** Delivered work, crated at the depot. One crate per completed task. */
   crates: number;
   createdAt: Timestamp;
+  updatedAt: Timestamp;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Bots — the five agents
+// Agents — every project has its own team
 // ─────────────────────────────────────────────────────────────────────────────
 
-export type BotKey = 'atlas' | 'nova' | 'forge' | 'slidebuilder' | 'excel-expert';
-
 /**
- * The static half of a bot: who it is and what it is allowed to do.
- * This is the part a real agent engine would turn into a system prompt,
- * a tool list and a set of approval rules.
+ * The kind of worker an agent is.
+ *
+ * An archetype decides how the agent looks, which work it naturally handles,
+ * and the brief it starts with. Its name, role, instructions and tools are all
+ * editable afterwards, so two projects can have very different Developers.
  */
-export interface BotProfile {
-  key: BotKey;
-  name: string;
+export type AgentArchetype = 'pm' | 'researcher' | 'developer' | 'presenter' | 'analyst';
+
+/** The static half of an archetype: appearance and sensible starting points. */
+export interface ArchetypeProfile {
+  key: AgentArchetype;
+  /** Default role title, and the default name suggested when hiring. */
   title: string;
-  /** The island this bot calls home. */
-  homeIsland: IslandKey;
+  defaultName: string;
   icon: string;
   color: { base: string; dark: string; light: string };
   tagline: string;
   responsibilities: string[];
   tools: string[];
-  /** The rules a real agent would be held to. Displayed, not yet enforced. */
+  /** The rules this kind of agent is held to. */
   approvalRules: string[];
-  /** Rotating status lines shown while the bot is working. */
+  /** Rotating status lines shown while it is working. */
   thoughts: string[];
-  /** Which kinds of task this bot is the natural owner of. */
+  /** Which kinds of task this archetype is the natural owner of. */
   handles: TaskType[];
+  /** Where on the island it waits and works by default. */
+  home: PlotKey;
 }
 
-/**
- * The live half of a bot: where it is and what it is doing right now.
- * The server owns this; the client animates between successive snapshots.
- */
-export interface Bot {
-  id: Id;
-  key: BotKey;
-  name: string;
-  islandId: Id;
-  /**
-   * What this agent is for. Seeded from its profile, then editable — so a real
-   * engine reads the agent's brief from the database rather than from code.
-   */
-  role: string;
-  /** The brief a real engine would send as this agent's system prompt. */
-  instructions: string;
-  /** What this agent is allowed to reach for. */
-  tools: string[];
-  status: BotStatus;
-  /** The task currently held, if any. */
-  taskId: Id | null;
-  /** Which plot on the island the bot is at, or heading to. */
-  locationKey: PlotKey;
-  /**
-   * Set while the bot is between plots. The client interpolates along the
-   * road network using these timestamps, so no per-frame traffic is needed.
-   */
-  movement: BotMovement | null;
-  /** Progress of the held task, 0–100. Mirrored here for cheap rendering. */
-  progress: number;
-  updatedAt: Timestamp;
-}
-
-export interface BotMovement {
+export interface AgentMovement {
   fromKey: PlotKey;
   toKey: PlotKey;
   departedAt: Timestamp;
   arrivesAt: Timestamp;
 }
 
-/** A bot joined to everything the UI needs to describe it in one line. */
-export interface BotView extends Bot {
-  profile: BotProfile;
-  island: Island;
+export interface Agent {
+  id: Id;
+  projectId: Id;
+  archetype: AgentArchetype;
+  name: string;
+  /** What this agent is for. */
+  role: string;
+  /** The brief a real engine would send as this agent's system prompt. */
+  instructions: string;
+  /** What this agent is allowed to reach for. */
+  tools: string[];
+  status: AgentStatus;
+  currentTaskId: Id | null;
+  /** Which building on its project's island it is at, or heading to. */
+  currentLocation: PlotKey;
+  /**
+   * Set while between buildings. The client interpolates along the road network
+   * using these timestamps, so no per-frame traffic is needed.
+   */
+  movement: AgentMovement | null;
+  /** Progress of the held task, 0–100. Mirrored here for cheap rendering. */
+  progress: number;
+  createdAt: Timestamp;
+  updatedAt: Timestamp;
+}
+
+/** An agent joined to everything the UI needs to describe it in one line. */
+export interface AgentView extends Agent {
+  profile: ArchetypeProfile;
+  project: Project;
   task: Task | null;
   movementState: MovementState;
-  /** Human-readable sentence: "Walking to the Workbench", "Rebuilding the pivot…". */
+  /** Human-readable sentence: "Walking to the Workshop", "Running tests…". */
   doing: string;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Projects and tasks
+// Tasks
 // ─────────────────────────────────────────────────────────────────────────────
-
-export type ProjectStatus = 'active' | 'paused' | 'archived';
-
-export interface Project {
-  id: Id;
-  name: string;
-  goal: string;
-  status: ProjectStatus;
-  /** Accent colour used on project cards and task chips. */
-  color: string;
-  createdAt: Timestamp;
-  updatedAt: Timestamp;
-}
 
 /**
  * How urgent a task is.
@@ -164,32 +155,32 @@ export const PRIORITY_TONE: Record<TaskPriority, string> = {
   low: 'mute',
 };
 
-/** Task type decides which island the work physically happens on. */
+/** Task type decides which building on the island the work happens at. */
 export type TaskType = 'planning' | 'research' | 'coding' | 'writing' | 'analysis' | 'review';
 
 export interface TaskTypeInfo {
   key: TaskType;
   label: string;
   icon: string;
-  /** Where a task of this type is carried out. */
-  island: IslandKey;
+  /** The building this kind of work is carried out at. */
+  building: PlotKey;
   /** Verb used in activity lines: "researching the market". */
   verb: string;
+  /** The archetype that naturally owns this kind of work. */
+  owner: AgentArchetype;
 }
 
 export interface Task {
   id: Id;
   projectId: Id;
+  assignedAgentId: Id | null;
   title: string;
-  notes: string;
+  description: string;
   type: TaskType;
   status: TaskStatus;
-  /** Orders the board, and decides what gets picked up first. */
   priority: TaskPriority;
-  /** Which island the work happens on — derived from `type` at creation. */
-  islandId: Id;
-  /** The bot holding this task, or null while it sits on the board. */
-  botId: Id | null;
+  /** Which building on the project's island this work happens at. */
+  buildingKey: PlotKey;
   /** 0–100. Advanced by the agent engine, never by the client. */
   progress: number;
   /** Simulated seconds of work from 0 to 100%. */
@@ -199,7 +190,6 @@ export interface Task {
   /** Set when the task fails: why it stopped and what you need to decide. */
   blocker: string | null;
   createdAt: Timestamp;
-  /** Last time anything about this task changed. */
   updatedAt: Timestamp;
   startedAt: Timestamp | null;
   completedAt: Timestamp | null;
@@ -208,8 +198,7 @@ export interface Task {
 /** A task joined to the names the UI would otherwise have to look up. */
 export interface TaskView extends Task {
   project: Pick<Project, 'id' | 'name' | 'color'>;
-  island: Pick<Island, 'id' | 'key' | 'name'>;
-  bot: Pick<Bot, 'id' | 'key' | 'name'> | null;
+  agent: Pick<Agent, 'id' | 'archetype' | 'name'> | null;
   typeInfo: TaskTypeInfo;
 }
 
@@ -217,7 +206,7 @@ export interface TaskView extends Task {
 // Activity log and approvals
 // ─────────────────────────────────────────────────────────────────────────────
 
-export type ActivityKind =
+export type ActivityEventType =
   | 'created'
   | 'assigned'
   | 'started'
@@ -233,18 +222,19 @@ export type ActivityKind =
   | 'retried'
   | 'arrived'
   | 'departed'
+  | 'hired'
+  | 'dismissed'
   | 'system';
 
 export interface ActivityEvent {
   id: Id;
-  kind: ActivityKind;
+  projectId: Id | null;
+  agentId: Id | null;
+  taskId: Id | null;
+  eventType: ActivityEventType;
   /** Plain sentence describing what happened, already formatted for display. */
   message: string;
-  projectId: Id | null;
-  taskId: Id | null;
-  botId: Id | null;
-  islandId: Id | null;
-  at: Timestamp;
+  timestamp: Timestamp;
 }
 
 export type ApprovalStatus = 'pending' | 'approved' | 'rejected';
@@ -252,19 +242,19 @@ export type ApprovalStatus = 'pending' | 'approved' | 'rejected';
 export interface ApprovalRequest {
   id: Id;
   taskId: Id;
-  botId: Id;
-  /** What the bot is asking you to sign off on. */
+  agentId: Id;
+  /** What the agent is asking you to sign off on. */
   summary: string;
   status: ApprovalStatus;
   requestedAt: Timestamp;
   decidedAt: Timestamp | null;
-  /** Reviewer's note, set when rejecting. */
+  /** Reviewer's note, set when sending work back. */
   note: string | null;
 }
 
 export interface ApprovalView extends ApprovalRequest {
   task: Pick<Task, 'id' | 'title' | 'type' | 'projectId'>;
-  bot: Pick<Bot, 'id' | 'key' | 'name'>;
+  agent: Pick<Agent, 'id' | 'archetype' | 'name'>;
   project: Pick<Project, 'id' | 'name' | 'color'>;
 }
 
@@ -273,9 +263,8 @@ export interface ApprovalView extends ApprovalRequest {
 // ─────────────────────────────────────────────────────────────────────────────
 
 export interface WorldSnapshot {
-  islands: Island[];
-  bots: Bot[];
   projects: Project[];
+  agents: Agent[];
   tasks: Task[];
   approvals: ApprovalRequest[];
   /** Most recent first, capped by the server. */
@@ -288,11 +277,10 @@ export interface WorldSnapshot {
 }
 
 export interface WorldStats {
-  islands: number;
-  bots: number;
-  botsWorking: number;
-  botsIdle: number;
   projects: number;
+  agents: number;
+  agentsWorking: number;
+  agentsIdle: number;
   tasksOpen: number;
   tasksCompleted: number;
   approvalsPending: number;
@@ -310,8 +298,19 @@ export interface EngineInfo {
 // Geometry
 // ─────────────────────────────────────────────────────────────────────────────
 
-/** The named plots every island has. Bots walk between these. */
-export type PlotKey = 'gate' | 'workbench' | 'approval' | 'depot' | 'rest';
+/**
+ * The places every project island has. Agents walk between them, and a task's
+ * kind of work decides which one it is carried out at.
+ */
+export type PlotKey =
+  | 'hq'
+  | 'library'
+  | 'workshop'
+  | 'studio'
+  | 'data'
+  | 'rest'
+  | 'gate'
+  | 'depot';
 
 export interface PlotInfo {
   key: PlotKey;
@@ -322,5 +321,3 @@ export interface PlotInfo {
   /** Position on the island's tile grid. */
   cell: { c: number; r: number };
 }
-
-export type BiomeKey = 'civic' | 'scholar' | 'forge' | 'studio' | 'ledger';

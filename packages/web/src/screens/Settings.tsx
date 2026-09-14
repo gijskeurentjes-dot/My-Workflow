@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { BOT_LIST, ISLAND_DEFS, STREAM_PATH } from '@ai-islands/shared';
+import { ARCHETYPE_LIST, PLOTS, STREAM_PATH } from '@ai-islands/shared';
 import { Avatar } from '../components/ui.js';
 import { useTheme } from '../useTheme.js';
 import { useWorldContext, useWorld } from '../world/WorldProvider.js';
@@ -98,14 +98,20 @@ export function Settings() {
         <div>
           <section className="card">
             <h4>
-              The agents <span className="count">{BOT_LIST.length}</span>
+              Kinds of agent <span className="count">{ARCHETYPE_LIST.length}</span>
             </h4>
-            {BOT_LIST.map((profile) => (
+            <p className="muted" style={{ marginBottom: 10 }}>
+              Every project hires its own team from these. An agent’s brief is editable afterwards,
+              so two projects can run very different Developers.
+            </p>
+            {ARCHETYPE_LIST.map((profile) => (
               <div className="row" key={profile.key} style={{ padding: '8px 0' }}>
-                <Avatar botKey={profile.key} size={30} />
+                <Avatar archetype={profile.key} size={30} />
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <b style={{ fontSize: 13 }}>{profile.name}</b>
-                  <div className="bot-role">{profile.title}</div>
+                  <b style={{ fontSize: 13 }}>{profile.title}</b>
+                  <div className="bot-role">
+                    works from the {PLOTS[profile.home].label} · suggested name {profile.defaultName}
+                  </div>
                 </div>
               </div>
             ))}
@@ -113,12 +119,17 @@ export function Settings() {
 
           <section className="card">
             <h4>
-              Work areas <span className="count">{ISLAND_DEFS.length}</span>
+              Your projects <span className="count">{world.projects.length}</span>
             </h4>
-            {ISLAND_DEFS.map((def) => (
-              <div className="kv" key={def.key}>
-                <span>{def.name}</span>
-                <b>{BOT_LIST.find((b) => b.homeIsland === def.key)?.name ?? '—'}</b>
+            {world.projects.map((project) => (
+              <div className="kv" key={project.id}>
+                <span>{project.name}</span>
+                <b>
+                  {world.agents.filter((a) => a.projectId === project.id).length}{' '}
+                  {world.agents.filter((a) => a.projectId === project.id).length === 1
+                    ? 'agent'
+                    : 'agents'}
+                </b>
               </div>
             ))}
           </section>
@@ -126,9 +137,9 @@ export function Settings() {
           <section className="card">
             <h4>Safety</h4>
             <p className="muted">
-              Agents cannot create other agents, so nothing can spawn itself in a loop. Work that
-              needs approval is never delivered without your decision, and every action an agent
-              takes is written to the activity log.
+              Agents cannot hire other agents — only you can add one, so nothing spawns itself in
+              a loop. Work that needs approval is never delivered without your decision, and every
+              action an agent takes is written to the activity log.
             </p>
           </section>
 

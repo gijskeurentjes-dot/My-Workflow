@@ -2,8 +2,7 @@ import type { Db } from '../../db/sqlite.js';
 import type { Repositories } from '../types.js';
 import { createActivityRepository } from './activity.repo.js';
 import { createApprovalRepository } from './approvals.repo.js';
-import { createBotRepository } from './bots.repo.js';
-import { createIslandRepository } from './islands.repo.js';
+import { createAgentRepository } from './agents.repo.js';
 import { createProjectRepository } from './projects.repo.js';
 import { createTaskRepository } from './tasks.repo.js';
 
@@ -15,8 +14,7 @@ import { createTaskRepository } from './tasks.repo.js';
  */
 export function createSqliteRepositories(db: Db): Repositories {
   return {
-    islands: createIslandRepository(db),
-    bots: createBotRepository(db),
+    agents: createAgentRepository(db),
     projects: createProjectRepository(db),
     tasks: createTaskRepository(db),
     approvals: createApprovalRepository(db),
@@ -33,9 +31,8 @@ export function createSqliteRepositories(db: Db): Repositories {
           DELETE FROM activity_events;
           DELETE FROM approval_requests;
           DELETE FROM tasks;
-          DELETE FROM bots;
+          DELETE FROM agents;
           DELETE FROM projects;
-          DELETE FROM islands;
         `);
       })();
     },

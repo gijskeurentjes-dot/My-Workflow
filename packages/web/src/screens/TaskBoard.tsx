@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import type { TaskStatus } from '@ai-islands/shared';
+import { PLOTS, PLOT_KEYS, type TaskStatus } from '@ai-islands/shared';
 import { NewTaskDialog } from '../components/CreateDialogs.js';
 import { TaskCard } from '../components/TaskCard.js';
 import { EmptyState } from '../components/ui.js';
@@ -22,15 +22,17 @@ export function TaskBoard() {
   const world = useWorld();
   const now = useSlowClock();
   const [projectId, setProjectId] = useState('');
-  const [islandId, setIslandId] = useState('');
+  const [buildingKey, setBuildingKey] = useState('');
   const [adding, setAdding] = useState(false);
 
   const tasks = useMemo(
     () =>
       world.tasks.filter(
-        (t) => (!projectId || t.projectId === projectId) && (!islandId || t.islandId === islandId),
+        (t) =>
+          (!projectId || t.projectId === projectId) &&
+          (!buildingKey || t.buildingKey === buildingKey),
       ),
-    [world.tasks, projectId, islandId],
+    [world.tasks, projectId, buildingKey],
   );
 
   return (
@@ -66,12 +68,16 @@ export function TaskBoard() {
         </label>
 
         <label className="row" style={{ gap: 6 }}>
-          <span className="eyebrow">Island</span>
-          <select className="btn btn-sm" value={islandId} onChange={(e) => setIslandId(e.target.value)}>
-            <option value="">All islands</option>
-            {world.islands.map((i) => (
-              <option key={i.id} value={i.id}>
-                {i.name}
+          <span className="eyebrow">Building</span>
+          <select
+            className="btn btn-sm"
+            value={buildingKey}
+            onChange={(e) => setBuildingKey(e.target.value)}
+          >
+            <option value="">Anywhere on the island</option>
+            {PLOT_KEYS.map((key) => (
+              <option key={key} value={key}>
+                {PLOTS[key].label}
               </option>
             ))}
           </select>
@@ -104,7 +110,6 @@ export function TaskBoard() {
                     world={world}
                     task={task}
                     now={now}
-                    showIsland
                     showStatus={false}
                     compact
                   />
@@ -118,8 +123,7 @@ export function TaskBoard() {
       {adding && (
         <NewTaskDialog
           projects={world.projects}
-          bots={world.bots}
-          islands={world.islands}
+          agents={world.agents}
           onClose={() => setAdding(false)}
         />
       )}

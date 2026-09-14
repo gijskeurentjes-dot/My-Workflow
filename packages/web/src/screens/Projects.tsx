@@ -34,7 +34,7 @@ export function Projects() {
         />
       ) : (
         <div className="grid-cards">
-          {summaries.map(({ project, tasks, done, open, blocked, awaiting, percent }) => (
+          {summaries.map(({ project, agents, tasks, doneCount, backlogCount, blockedCount, awaitingCount, percent }) => (
             <Link key={project.id} to={`/projects/${project.id}`} className="list-card">
               <div className="row" style={{ marginBottom: 6 }}>
                 <span
@@ -43,18 +43,27 @@ export function Projects() {
                   aria-hidden="true"
                 />
                 <b style={{ fontSize: 15, flex: 1, minWidth: 0 }}>{project.name}</b>
-                {blocked > 0 && <span className="pill tone-bad">{blocked} blocked</span>}
-                {blocked === 0 && awaiting > 0 && (
-                  <span className="pill tone-warn">{awaiting} to approve</span>
+                {blockedCount > 0 && <span className="pill tone-bad">{blockedCount} blocked</span>}
+                {blockedCount === 0 && awaitingCount > 0 && (
+                  <span className="pill tone-warn">{awaitingCount} to approve</span>
                 )}
               </div>
-              <p className="muted">{project.goal || 'No goal set.'}</p>
+              <p className="muted">{project.description || 'No description yet.'}</p>
+              <div className="isle-meta" style={{ marginTop: 8 }}>
+                <span>
+                  <b>{agents.length}</b> agents
+                </span>
+                <span>
+                  <b>{backlogCount}</b> waiting
+                </span>
+                <span>
+                  <b>{project.crates}</b> delivered
+                </span>
+              </div>
               <ProgressBar
                 percent={percent}
                 note={
-                  tasks.length === 0
-                    ? 'No tasks yet'
-                    : `${done} of ${tasks.length} delivered · ${open} open`
+                  tasks.length === 0 ? 'No tasks yet' : `${doneCount} of ${tasks.length} delivered`
                 }
               />
             </Link>

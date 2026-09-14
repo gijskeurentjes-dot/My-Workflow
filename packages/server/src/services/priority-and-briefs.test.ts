@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { PRIORITY_RANK, type TaskPriority } from '@ai-islands/shared';
 import { WorkflowError } from '../errors.js';
-import { botByName, createTestWorld, taskByTitle, type TestWorld } from '../test/helpers.js';
+import { agentByName, createTestWorld, taskByTitle, type TestWorld } from '../test/helpers.js';
 
 describe('task priority', () => {
   let w: TestWorld;
@@ -75,8 +75,8 @@ describe('task priority', () => {
 
     w.fastForward(5);
 
-    const forge = botByName(w.repos, 'Forge');
-    expect(forge.taskId, 'Forge took the low-priority job instead of the urgent one').toBe(
+    const forge = agentByName(w.repos, 'Forge');
+    expect(forge.currentTaskId, 'Forge took the low-priority job instead of the urgent one').toBe(
       urgent.id,
     );
     expect(w.repos.tasks.findById(old.id)!.status).toBe('backlog');
@@ -109,16 +109,16 @@ describe('agent briefs', () => {
 
   it('seeds every agent with a role, instructions and tools', () => {
     w = createTestWorld();
-    for (const bot of w.repos.bots.list()) {
-      expect(bot.role, `${bot.name} has no role`).toBeTruthy();
-      expect(bot.instructions.length, `${bot.name} has no instructions`).toBeGreaterThan(40);
-      expect(bot.tools.length, `${bot.name} has no tools`).toBeGreaterThan(0);
+    for (const agent of w.repos.agents.list()) {
+      expect(agent.role, `${agent.name} has no role`).toBeTruthy();
+      expect(agent.instructions.length, `${agent.name} has no instructions`).toBeGreaterThan(40);
+      expect(agent.tools.length, `${agent.name} has no tools`).toBeGreaterThan(0);
     }
   });
 
   it('builds instructions a real engine could send as a system prompt', () => {
     w = createTestWorld();
-    const forge = botByName(w.repos, 'Forge');
+    const forge = agentByName(w.repos, 'Forge');
     expect(forge.role).toBe('Developer');
     expect(forge.instructions).toContain('Responsibilities:');
     expect(forge.instructions).toContain('Always check with the user before:');
@@ -127,41 +127,41 @@ describe('agent briefs', () => {
 
   it('lets the brief be rewritten and persists it', () => {
     w = createTestWorld();
-    const forge = botByName(w.repos, 'Forge');
+    const forge = agentByName(w.repos, 'Forge');
 
-    const { bot } = w.workflow.updateBot(forge.id, {
+    const { agent } = w.workflow.updateAgent(forge.id, {
       role: 'Staff Engineer',
       instructions: 'Only touch the payments service. Never deploy on a Friday.',
       tools: ['Repository access', 'Test runner'],
     });
 
-    expect(bot.role).toBe('Staff Engineer');
-    expect(bot.tools).toEqual(['Repository access', 'Test runner']);
+    expect(agent.role).toBe('Staff Engineer');
+    expect(agent.tools).toEqual(['Repository access', 'Test runner']);
 
     // And it survives a round trip through the database.
-    const reread = w.repos.bots.findById(forge.id)!;
+    const reread = w.repos.agents.findById(forge.id)!;
     expect(reread.instructions).toBe('Only touch the payments service. Never deploy on a Friday.');
   });
 
   it('drops blank tools rather than storing empty strings', () => {
     w = createTestWorld();
-    const nova = botByName(w.repos, 'Nova');
-    const { bot } = w.workflow.updateBot(nova.id, { tools: ['Web research', '  ', ''] });
-    expect(bot.tools).toEqual(['Web research']);
+    const nova = agentByName(w.repos, 'Nova');
+    const { agent } = w.workflow.updateAgent(nova.id, { tools: ['Web research', '  ', ''] });
+    expect(agent.tools).toEqual(['Web research']);
   });
 
   it('refuses to blank an agent’s name', () => {
     w = createTestWorld();
-    const nova = botByName(w.repos, 'Nova');
-    expect(() => w.workflow.updateBot(nova.id, { name: '   ' })).toThrow(WorkflowError);
+    const nova = agentByName(w.repos, 'Nova');
+    expect(() => w.workflow.updateAgent(nova.id, { name: '   ' })).toThrow(WorkflowError);
   });
 
   it('writes an activity line naming what changed', () => {
     w = createTestWorld();
-    const atlas = botByName(w.repos, 'Atlas');
+    const atlas = agentByName(w.repos, 'Atlas');
     const before = w.repos.activity.list({ limit: 500 }).length;
 
-    w.workflow.updateBot(atlas.id, { instructions: 'Escalate everything.' });
+    w.workflow.updateAgent(atlas.id, { instructions: 'Escalate everything.' });
 
     const after = w.repos.activity.list({ limit: 500 });
     expect(after.length).toBe(before + 1);

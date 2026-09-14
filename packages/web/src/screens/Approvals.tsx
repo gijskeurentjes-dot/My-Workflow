@@ -24,9 +24,9 @@ export function Approvals() {
 
   const join = (approval: (typeof world.approvals)[number]) => {
     const task = world.tasks.find((t) => t.id === approval.taskId);
-    const bot = world.bots.find((b) => b.id === approval.botId);
+    const agent = world.agents.find((b) => b.id === approval.agentId);
     const project = task ? world.projects.find((p) => p.id === task.projectId) : null;
-    return { task, bot, project };
+    return { task, agent, project };
   };
 
   const sendBack = async (approvalId: string) => {
@@ -69,18 +69,18 @@ export function Approvals() {
 
           <div className="grid-cards">
             {pending.map((approval) => {
-              const { task, bot, project } = join(approval);
+              const { task, agent, project } = join(approval);
               const busy =
                 isPending(`approve:${approval.id}`) || isPending(`reject:${approval.id}`);
 
               return (
                 <article className="list-card" key={approval.id} style={{ cursor: 'default' }}>
                   <div className="row" style={{ marginBottom: 8 }}>
-                    {bot && <Avatar botKey={bot.key} size={34} />}
+                    {agent && <Avatar archetype={agent.archetype} size={34} />}
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div className="bot-name">{task?.title ?? 'Unknown task'}</div>
                       <div className="bot-role">
-                        {bot?.name ?? 'An agent'} · {timeAgo(approval.requestedAt, now)}
+                        {agent?.name ?? 'An agent'} · {timeAgo(approval.requestedAt, now)}
                       </div>
                     </div>
                     <StatusPill status="waiting_approval" />
@@ -103,9 +103,13 @@ export function Approvals() {
                         {project.name}
                       </Link>
                     )}
-                    {bot && (
-                      <Link to={`/bots/${bot.id}`} className="tag" style={{ textDecoration: 'none' }}>
-                        View {bot.name}
+                    {agent && (
+                      <Link
+                        to={`/agents/${agent.id}`}
+                        className="tag"
+                        style={{ textDecoration: 'none' }}
+                      >
+                        View {agent.name}
                       </Link>
                     )}
                   </div>
@@ -150,7 +154,7 @@ export function Approvals() {
                           run(
                             `approve:${approval.id}`,
                             () => api.approve(approval.id),
-                            `Approved — ${bot?.name ?? 'the agent'} is delivering it`,
+                            `Approved — ${agent?.name ?? 'the agent'} is delivering it`,
                           )
                         }
                       >

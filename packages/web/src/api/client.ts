@@ -1,7 +1,8 @@
 import {
   API_BASE,
+  type Agent,
+  type AgentArchetype,
   type ApprovalRequest,
-  type Bot,
   type Id,
   type Project,
   type Task,
@@ -53,23 +54,25 @@ const del = <T>(path: string) => request<T>(path, { method: 'DELETE' });
 
 export interface CreateProjectInput {
   name: string;
-  goal?: string;
+  description?: string;
   color?: string;
+  /** Who to hire onto the new project. Defaults to a project manager. */
+  team?: AgentArchetype[];
 }
 
 export interface CreateTaskInput {
   projectId: Id;
   title: string;
-  notes?: string;
+  description?: string;
   type: TaskType;
   priority?: TaskPriority;
   needsApproval?: boolean;
-  botId?: Id | null;
+  agentId?: Id | null;
   autoStart?: boolean;
 }
 
 /** An agent's brief: what a real engine would send as its system prompt. */
-export interface UpdateBotInput {
+export interface UpdateAgentInput {
   name?: string;
   role?: string;
   instructions?: string;
@@ -99,11 +102,16 @@ export const api = {
   createTask: (input: CreateTaskInput) => post<Task>('/tasks', input),
   updateTask: (
     id: Id,
-    input: { title?: string; notes?: string; needsApproval?: boolean; priority?: TaskPriority },
+    input: {
+      title?: string;
+      description?: string;
+      needsApproval?: boolean;
+      priority?: TaskPriority;
+    },
   ) => patch<Task>(`/tasks/${id}`, input),
   deleteTask: (id: Id) => del<{ ok: true }>(`/tasks/${id}`),
 
-  assignTask: (id: Id, botId: Id) => post<unknown>(`/tasks/${id}/assign`, { botId }),
+  assignTask: (id: Id, agentId: Id) => post<unknown>(`/tasks/${id}/assign`, { agentId }),
   unassignTask: (id: Id) => post<unknown>(`/tasks/${id}/unassign`),
   startTask: (id: Id) => post<unknown>(`/tasks/${id}/start`),
   pauseTask: (id: Id) => post<unknown>(`/tasks/${id}/pause`),
@@ -111,7 +119,10 @@ export const api = {
   retryTask: (id: Id) => post<unknown>(`/tasks/${id}/retry`),
   resetTask: (id: Id) => post<unknown>(`/tasks/${id}/reset`),
 
-  updateBot: (id: Id, input: UpdateBotInput) => patch<Bot>(`/bots/${id}`, input),
+  hireAgent: (projectId: Id, archetype: AgentArchetype, name?: string) =>
+    post<Agent>('/agents', { projectId, archetype, name }),
+  updateAgent: (id: Id, input: UpdateAgentInput) => patch<Agent>(`/agents/${id}`, input),
+  dismissAgent: (id: Id) => del<{ ok: true }>(`/agents/${id}`),
 
   approve: (id: Id) => post<ApprovalRequest>(`/approvals/${id}/approve`),
   reject: (id: Id, note?: string) => post<ApprovalRequest>(`/approvals/${id}/reject`, { note }),

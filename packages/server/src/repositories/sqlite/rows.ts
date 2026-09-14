@@ -57,6 +57,10 @@ export interface AgentRow {
   role: string;
   instructions: string;
   tools: string;
+  model: string;
+  max_execution_ms: number;
+  max_output_tokens: number;
+  requires_approval: number;
   status: string;
   current_task_id: string | null;
   current_location: string;
@@ -87,6 +91,10 @@ export const toAgent = (r: AgentRow): Agent => ({
   role: r.role,
   instructions: r.instructions,
   tools: parseTools(r.tools),
+  model: r.model,
+  maxExecutionMs: r.max_execution_ms,
+  maxOutputTokens: r.max_output_tokens,
+  requiresApproval: r.requires_approval === 1,
   status: r.status as Agent['status'],
   currentTaskId: r.current_task_id,
   currentLocation: r.current_location as PlotKey,

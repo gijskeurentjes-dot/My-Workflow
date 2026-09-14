@@ -91,6 +91,7 @@ export function dropAll(db: Db): void {
   const drop = db.transaction(() => {
     db.exec(`
       PRAGMA foreign_keys = OFF;
+      DROP TABLE IF EXISTS task_results;
       DROP TABLE IF EXISTS activity_events;
       DROP TABLE IF EXISTS approval_requests;
       DROP TABLE IF EXISTS tasks;

@@ -8,6 +8,8 @@ import type { AgentEngine, EngineChanges } from './services/agents/agent-engine.
 import { MockAgentEngine } from './services/agents/mock-agent-engine.js';
 import { WorldService } from './services/world.service.js';
 import { WorkflowService } from './services/workflow.service.js';
+import { TaskExecutionService } from './services/task-execution.service.js';
+import { buildAgentRunners } from './services/agents/claude/runners.js';
 
 /**
  * Everything the app is built from, wired together in one place.
@@ -21,6 +23,8 @@ export interface AppContext {
   engine: AgentEngine;
   world: WorldService;
   workflow: WorkflowService;
+  /** Runs a task against a real agent. Present even with no API key. */
+  execution: TaskExecutionService;
   broadcaster: Broadcaster;
   /**
    * Push a set of changes to every connected browser.
@@ -108,6 +112,23 @@ export function createContext(options: CreateContextOptions = {}): AppContext {
   const world = new WorldService(repos, engine, config.activityLimit);
   const workflow = new WorkflowService(repos);
 
+  // Real agent execution runs beside the simulation rather than inside it: a
+  // live run drives the same states the mock does, so nothing downstream —
+  // the stream, the screens, the approval queue — can tell them apart.
+  const execution = new TaskExecutionService(repos, {
+    runners: buildAgentRunners(),
+    publish,
+    maxSearches: config.agentMaxSearches,
+    onEvent: (event) => {
+      // Progress is already reflected in the rows this service writes; the
+      // event stream is for anything that has no row of its own.
+      if (event.type === 'searching') {
+        // eslint-disable-next-line no-console
+        console.log(`[agent] search: ${event.query}`);
+      }
+    },
+  });
+
   if (options.seed !== false && isEmptyWorld(repos)) {
     seedWorld(repos);
   }
@@ -122,6 +143,7 @@ export function createContext(options: CreateContextOptions = {}): AppContext {
     engine,
     world,
     workflow,
+    execution,
     broadcaster,
     publish,
 
@@ -134,6 +156,7 @@ export function createContext(options: CreateContextOptions = {}): AppContext {
     },
 
     shutdown(): void {
+      execution.cancelAll();
       engine.stop();
       broadcaster.closeAll();
       db.close();

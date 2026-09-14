@@ -4,11 +4,11 @@ A visual workspace for a team of AI agents. Five agents live on five islands; yo
 can see at a glance which projects exist, who is working, what they are doing,
 what is waiting, what is finished, and where you need to make a decision.
 
-> **Nothing here calls an AI model yet.** The agents are driven by a mock engine
-> on the server. Progress, walking, approvals and deliveries are produced by a
-> state machine — but the *states*, the *transitions* and the *events* are the
-> real ones, so the simulation can be swapped for real Claude agents without
-> rewriting the interface. See [Replacing the mock agents](#replacing-the-mock-agents).
+> **One agent is real; the rest are simulated.** Nova the Researcher runs on a
+> real Claude model — see [docs/AGENTS.md](docs/AGENTS.md). Everyone else is
+> driven by a mock engine: progress, walking, approvals and deliveries come from
+> a state machine. The *states*, the *transitions* and the *events* are the same
+> either way, which is why a live run needs no screen of its own.
 
 ---
 
@@ -41,6 +41,7 @@ line with `npm run db:reset`.
 | `npm test`          | Server test suite (Vitest)                                |
 | `npm run typecheck` | Typecheck every package                                   |
 | `npm run db:reset`  | Drop, re-migrate and re-seed the database                 |
+| `npm run agent:nova`| Run the real research agent on a test task ([docs](docs/AGENTS.md)) |
 
 ---
 
@@ -141,7 +142,38 @@ the UI unchanged when real agents take over.
 
 ---
 
-## Replacing the mock agents
+## Real agents
+
+**Nova the Researcher is real.** Give her a task like *"Research the top
+competitors in my market and create a summary"* and she runs on Claude with web
+search, produces a structured report — findings tagged fact or assumption,
+sources, open questions, a confidence — and comes back for your approval.
+
+```bash
+npm run agent:nova
+```
+
+Two things are worth knowing:
+
+- **The honesty check is code, not a promise.** Her brief says *"do not claim to
+  have researched something unless you actually did it"*, so after every run the
+  report's sources are compared against the URLs actually retrieved. A cited
+  page that was never fetched becomes a warning on the task's history.
+- **The security rules are enforced before the run starts.** The only tool ever
+  offered is Anthropic-hosted web search — no shell, no filesystem, no code
+  execution, nothing that can send mail or spend money — and an agent may only
+  run work belonging to the project it is on.
+
+Live execution is reachable from the command line and the API. It is
+deliberately **not** wired into the visual world yet: the backend is being
+proven on its own first.
+
+Setup, limits, the API, and what an agent may not do:
+**[docs/AGENTS.md](docs/AGENTS.md)**.
+
+---
+
+## Replacing the rest of the mock agents
 
 `MockAgentEngine` implements the `AgentEngine` interface in
 [`packages/server/src/services/agents/agent-engine.ts`](packages/server/src/services/agents/agent-engine.ts):
@@ -179,10 +211,14 @@ Copy `.env.example` to `.env`. The defaults work without it.
 | `MOCK_AUTO_ASSIGN` | `true` | Whether idle agents pick work off the board unprompted |
 | `AGENT_TICK_MS` | `500` | How often the engine advances the world |
 | `CORS_ORIGIN` | `http://localhost:5173` | Browser origin allowed to call the API |
+| `ANTHROPIC_API_KEY` | *(unset)* | Needed to run a real agent. Without it the app runs on the mock engine as before |
+| `AGENT_MODEL` | `claude-opus-5` | The model a newly hired agent runs on |
+| `AGENT_MAX_SEARCHES` | `8` | How many web searches one research run may perform |
 
-Secrets belong in `.env`, which is gitignored. `ANTHROPIC_API_KEY` is listed in
-`.env.example` as a commented placeholder for the real engine; nothing reads it
-yet.
+Secrets belong in `.env`, which is gitignored — never in `.env.example`. The
+API key is read from the environment by the SDK: it is never stored in the
+database, returned by an endpoint, logged, or put into a prompt. Full setup in
+[docs/AGENTS.md](docs/AGENTS.md).
 
 ---
 
@@ -231,7 +267,7 @@ agent never delivers work that needs sign-off without it.
 
 ## Current state
 
-Milestones 1 and 2 are complete. The world runs, and you can drive it.
+The world runs, you can drive it, and one agent is real.
 
 - Multiple projects, each its own island with its own team
 - Multiple agents per project, hired and dismissed at will
@@ -241,10 +277,14 @@ Milestones 1 and 2 are complete. The world runs, and you can drive it.
 - Full command API: projects, agents, tasks, execution and approvals
 - Live updates over Server-Sent Events, with automatic reconnection
 - Every screen rendering and mutating real data
-- 84 server tests
+- **A real research agent**: Claude with web search, structured reports, an
+  honesty check on its sources, enforced tool and project limits, cancellation
+  and recorded usage
+- 119 server tests, none of which touch the network
 
 Still to come:
 
-- Real Claude agents behind the existing `AgentEngine` interface
+- The real agents wired into the visual world
+- Live engines for the other four archetypes
 - Authentication, and more than one world
 - Retention on the activity log

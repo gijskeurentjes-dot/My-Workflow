@@ -14,7 +14,9 @@ import {
   type TaskPriority,
   type TaskType,
 } from '@ai-islands/shared';
+import { DEFAULT_AGENT_MODEL } from '../config.js';
 import { newId } from '../ids.js';
+import { RESEARCH_DEFAULTS } from '../services/agents/claude/nova.js';
 import type { Repositories } from '../repositories/types.js';
 
 /**
@@ -282,6 +284,12 @@ export function seedWorld(repos: Repositories, now: number = Date.now()): SeedRe
         role: profile.title,
         instructions: defaultInstructions(profile),
         tools: [...profile.tools],
+        // Execution limits travel with the agent, so a run has a ceiling
+        // even if nobody thought about it when the agent was hired.
+        model: DEFAULT_AGENT_MODEL,
+        maxExecutionMs: RESEARCH_DEFAULTS.maxExecutionMs,
+        maxOutputTokens: RESEARCH_DEFAULTS.maxOutputTokens,
+        requiresApproval: RESEARCH_DEFAULTS.requiresApproval,
         status,
         currentTaskId: null, // linked below, once the tasks exist
         currentLocation: locationFor(status, definition.archetype, heldTask),

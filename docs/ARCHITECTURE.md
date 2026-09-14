@@ -23,7 +23,7 @@ of a bot, the web build fails — it cannot drift into a runtime surprise.
 | File | Contents |
 | ---- | -------- |
 | `types.ts` | Domain entities and the DTOs on the wire |
-| `status.ts` | The seven agent states and eight task states, with labels and colour tones |
+| `status.ts` | The eight agent states and nine task states, with labels and colour tones |
 | `archetypes.ts` | The five archetypes, and which task type each owns |
 | `appearance.ts` | Biome palettes (light and dark) and how a project's island is chosen |
 | `geometry.ts` | Isometric projection, terrain generation, roads, pathfinding |
@@ -48,6 +48,9 @@ repositories/sqlite/          The SQLite implementation
 services/world.service.ts     The read side: snapshots, stats, joined views
 services/workflow.service.ts  The command side: every transition you can trigger
 services/agents/              The agent engine seam  ← real agents slot in here
+services/agents/claude/       Nova: the runner, its limits, the API client
+services/task-execution.service.ts  Runs one task against a real agent
+scripts/run-nova.ts           The command-line test task
 errors.ts                     WorkflowError, carrying the HTTP status with the rule
 realtime/broadcaster.ts       The SSE hub
 routes/                       One router per resource
@@ -82,12 +85,12 @@ Everything else is ordinary. These two are what the brief actually asked for.
 
 ```ts
 export interface Repositories {
-  islands: IslandRepository;
-  bots: BotRepository;
   projects: ProjectRepository;
+  agents: AgentRepository;
   tasks: TaskRepository;
   approvals: ApprovalRepository;
   activity: ActivityRepository;
+  results: TaskResultRepository;
   transaction<T>(fn: () => T): T;
   reset(): void;
 }
@@ -150,6 +153,45 @@ minute does not finish every task at once when it wakes.
 Idle agents pick work off the board on their own (`autoAssign`, on by default),
 which is the mock stand-in for Atlas delegating. A real engine would ask the
 project manager agent to make that call.
+
+#### The real runtime, beside it
+
+There is a second path that does not go through the engine at all.
+`TaskExecutionService` takes a task id and runs it against a real model, and the
+seam it depends on is one method:
+
+```ts
+export interface AgentRunner {
+  readonly archetype: string;
+  run(context: AgentRunContext, emit: RunEventSink, signal: AbortSignal): Promise<AgentRunResult>;
+}
+```
+
+A run is one thing, so it is one method; cancellation arrives through the signal
+rather than a second call, which is what lets it compose with the SDK's own
+abort handling and with the deadline the service sets.
+
+Three decisions are load-bearing:
+
+- **The context is assembled before the model is called.** The runner is handed
+  exactly one agent, one task and one project, and has no way to reach a second
+  one even if the model asks for it. Project scope is a property of what gets
+  loaded, not a rule the model is asked to follow.
+- **The tool allow-list is resolved server-side from the agent's stored brief.**
+  That brief is editable in the UI, so it is not trusted: a forbidden tool is a
+  refusal before the run starts, and only `web_search` is ever handed over.
+- **It writes the same states the mock does.** A live run is `working`, then
+  `waiting_approval` or `delivering`, then whatever you decide. Nothing
+  downstream branches on which engine produced a row.
+
+`buildAgentRunners()` returns an empty map when no credentials are configured,
+so the application is identical with and without a key — the difference is
+whether an execution request is possible, not whether the app starts.
+
+Research runs in two phases (search, then structure) so that the call which
+produces the typed report cannot be the one that invents a source; the report's
+sources are then checked against the URLs actually retrieved. See
+[AGENTS.md](AGENTS.md).
 
 ---
 
@@ -323,6 +365,17 @@ broke: that finished work asks for approval instead of completing itself, that
 exactly one approval request is raised, that paused and blocked work does not
 advance, and that two agents never hold the same task.
 
+The real agent runtime is tested the same way, and **no test reaches the
+network**. The Anthropic client is replaced by a fake that encodes the real
+response shapes — a web search result is a list on success and an object on
+error, usage is snake_case, a refusal arrives as HTTP 200 with
+`stop_reason: 'refusal'` — because a fake that gets those wrong would let the
+tests agree with a bug. On top of that sit the things worth being sure of: that
+a source cited but never retrieved is flagged, that a paused turn is resumed
+rather than half-answered, that a run past its time limit is stopped, that
+cancellation frees the agent, and that an agent asking for a forbidden tool or
+another project's work is refused before a single token is spent.
+
 ---
 
 ## Deliberate omissions
@@ -341,3 +394,11 @@ Called out so they read as decisions rather than oversights.
   reversible.
 - **Activity log is unbounded.** Fine for a demo; a production build would need
   retention.
+- **Only the Researcher is real.** The other four archetypes have no live
+  runner, and asking to execute one is refused rather than silently simulated.
+- **Live execution is not wired into the visual world.** It runs from the
+  command line and the API only, so the backend can be proven on its own before
+  a button exists for it.
+- **No cost ceiling in currency.** A run is bounded by time, output tokens and
+  searches, which are the levers actually available; converting those to a
+  spend limit would need per-model pricing that does not belong in this build.

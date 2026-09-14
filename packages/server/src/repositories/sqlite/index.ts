@@ -4,6 +4,7 @@ import { createActivityRepository } from './activity.repo.js';
 import { createApprovalRepository } from './approvals.repo.js';
 import { createAgentRepository } from './agents.repo.js';
 import { createProjectRepository } from './projects.repo.js';
+import { createTaskResultRepository } from './results.repo.js';
 import { createTaskRepository } from './tasks.repo.js';
 
 /**
@@ -19,6 +20,7 @@ export function createSqliteRepositories(db: Db): Repositories {
     tasks: createTaskRepository(db),
     approvals: createApprovalRepository(db),
     activity: createActivityRepository(db),
+    results: createTaskResultRepository(db),
 
     transaction<T>(fn: () => T): T {
       return db.transaction(fn)();
@@ -28,6 +30,7 @@ export function createSqliteRepositories(db: Db): Repositories {
       // Order matters: children before parents, since foreign keys are on.
       db.transaction(() => {
         db.exec(`
+          DELETE FROM task_results;
           DELETE FROM activity_events;
           DELETE FROM approval_requests;
           DELETE FROM tasks;

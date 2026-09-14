@@ -90,10 +90,28 @@ export interface Agent {
   name: string;
   /** What this agent is for. */
   role: string;
-  /** The brief a real engine would send as this agent's system prompt. */
+  /** The brief a real engine sends as this agent's system prompt. */
   instructions: string;
-  /** What this agent is allowed to reach for. */
+  /**
+   * What this agent is allowed to reach for.
+   *
+   * This is an allow-list, enforced on the server before a run starts: a tool
+   * not named here is never offered to the model, whatever the instructions say.
+   */
   tools: string[];
+  /** Which Claude model runs this agent. */
+  model: string;
+  /** Hard wall-clock ceiling for one run, in milliseconds. */
+  maxExecutionMs: number;
+  /**
+   * Ceiling on tokens this agent may generate in one run.
+   *
+   * The usage limit the brief asks for: a run that would exceed it is stopped
+   * rather than allowed to keep spending.
+   */
+  maxOutputTokens: number;
+  /** Whether this agent's finished work always needs your sign-off. */
+  requiresApproval: boolean;
   status: AgentStatus;
   currentTaskId: Id | null;
   /** Which building on its project's island it is at, or heading to. */
@@ -235,6 +253,72 @@ export interface ActivityEvent {
   /** Plain sentence describing what happened, already formatted for display. */
   message: string;
   timestamp: Timestamp;
+}
+
+/**
+ * What an agent produced.
+ *
+ * Stored separately from the task so a rerun keeps the previous attempt, and so
+ * the structured report can grow without widening the tasks table.
+ */
+export interface TaskResult {
+  id: Id;
+  taskId: Id;
+  agentId: Id;
+  /** One-paragraph answer to the task, suitable for the activity feed. */
+  summary: string;
+  /** The full structured report the agent returned. */
+  report: ResearchReport | null;
+  /** Raw assistant text, kept when the structured parse failed. */
+  rawText: string;
+  model: string;
+  /** Why the model stopped: end_turn, max_tokens, refusal, … */
+  stopReason: string | null;
+  usage: RunUsage;
+  /** Wall-clock duration of the run. */
+  durationMs: number;
+  createdAt: Timestamp;
+}
+
+/** Token and cost accounting for one run. */
+export interface RunUsage {
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadTokens: number;
+  cacheCreationTokens: number;
+  /** How many web searches the run actually performed. */
+  webSearches: number;
+}
+
+/** A source the agent actually retrieved, not one it recalled. */
+export interface ResearchSource {
+  title: string;
+  url: string;
+  /** What this source contributed. */
+  relevance: string;
+}
+
+export interface ResearchFinding {
+  /** The claim itself. */
+  statement: string;
+  /**
+   * Whether this is supported by a retrieved source or is the agent's own
+   * reading. Keeping them apart is the whole point of the brief.
+   */
+  kind: 'fact' | 'assumption';
+  /** URLs of the sources supporting it. Empty for an assumption. */
+  sourceUrls: string[];
+}
+
+/** The structured result a research run produces. */
+export interface ResearchReport {
+  summary: string;
+  findings: ResearchFinding[];
+  sources: ResearchSource[];
+  /** What the agent could not establish. Never left empty by pretending. */
+  openQuestions: string[];
+  /** The agent's own confidence in the report as a whole. */
+  confidence: 'low' | 'medium' | 'high';
 }
 
 export type ApprovalStatus = 'pending' | 'approved' | 'rejected';

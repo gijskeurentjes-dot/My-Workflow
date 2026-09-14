@@ -34,6 +34,8 @@ export function desiredPlot(
 export function movementState(agent: Pick<Agent, 'status' | 'movement'>): MovementState {
   if (agent.movement) return 'walking';
   switch (agent.status) {
+    case 'queued':
+      return 'queued';
     case 'working':
       return 'working';
     case 'waiting_approval':
@@ -69,6 +71,8 @@ export function describeAgent(agent: Agent, task: Task | null, thoughtIndex = 0)
       }
       return profile.thoughts[thoughtIndex % profile.thoughts.length] ?? 'Working…';
     }
+    case 'queued':
+      return task ? `Queued to start “${task.title}”` : 'Queued';
     case 'waiting_approval':
       return `At ${PLOTS[APPROVAL_PLOT].label}, waiting for your decision`;
     case 'paused':

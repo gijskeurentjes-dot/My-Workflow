@@ -11,10 +11,12 @@ export function createAgentRepository(db: Db): AgentRepository {
   );
   const insert = db.prepare(`
     INSERT INTO agents (id, project_id, archetype, name, role, instructions, tools,
+                        model, max_execution_ms, max_output_tokens, requires_approval,
                         status, current_task_id, current_location,
                         move_from, move_to, move_departed, move_arrives,
                         progress, created_at, updated_at)
     VALUES (@id, @project_id, @archetype, @name, @role, @instructions, @tools,
+            @model, @max_execution_ms, @max_output_tokens, @requires_approval,
             @status, @current_task_id, @current_location,
             @move_from, @move_to, @move_departed, @move_arrives,
             @progress, @created_at, @updated_at)
@@ -41,6 +43,10 @@ export function createAgentRepository(db: Db): AgentRepository {
         role: agent.role,
         instructions: agent.instructions,
         tools: JSON.stringify(agent.tools),
+        model: agent.model,
+        max_execution_ms: agent.maxExecutionMs,
+        max_output_tokens: agent.maxOutputTokens,
+        requires_approval: agent.requiresApproval ? 1 : 0,
         status: agent.status,
         current_task_id: agent.currentTaskId,
         current_location: agent.currentLocation,
@@ -79,6 +85,22 @@ export function createAgentRepository(db: Db): AgentRepository {
         params[column] = patch[key];
       }
 
+      if (patch.model !== undefined) {
+        sets.push('model = @model');
+        params.model = patch.model;
+      }
+      if (patch.maxExecutionMs !== undefined) {
+        sets.push('max_execution_ms = @max_execution_ms');
+        params.max_execution_ms = patch.maxExecutionMs;
+      }
+      if (patch.maxOutputTokens !== undefined) {
+        sets.push('max_output_tokens = @max_output_tokens');
+        params.max_output_tokens = patch.maxOutputTokens;
+      }
+      if (patch.requiresApproval !== undefined) {
+        sets.push('requires_approval = @requires_approval');
+        params.requires_approval = patch.requiresApproval ? 1 : 0;
+      }
       if (patch.tools !== undefined) {
         sets.push('tools = @tools');
         params.tools = JSON.stringify(patch.tools);

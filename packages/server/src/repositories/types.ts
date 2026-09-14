@@ -12,6 +12,7 @@ import type {
   ProjectStatus,
   Task,
   TaskPriority,
+  TaskResult,
   TaskStatus,
   TaskType,
 } from '@ai-islands/shared';
@@ -51,6 +52,10 @@ export interface AgentPatch {
   role?: string;
   instructions?: string;
   tools?: string[];
+  model?: string;
+  maxExecutionMs?: number;
+  maxOutputTokens?: number;
+  requiresApproval?: boolean;
   status?: AgentStatus;
   currentTaskId?: Id | null;
   currentLocation?: PlotKey;
@@ -125,6 +130,14 @@ export interface ActivityFilter {
   limit?: number;
 }
 
+/** What agents produced. Append-only: a rerun adds a result, never replaces one. */
+export interface TaskResultRepository {
+  create(result: TaskResult): TaskResult;
+  /** Newest first, so the latest attempt reads as the current answer. */
+  listByTask(taskId: Id): TaskResult[];
+  findLatestByTask(taskId: Id): TaskResult | null;
+}
+
 export interface ActivityRepository {
   list(filter?: ActivityFilter): ActivityEvent[];
   create(event: ActivityEvent): ActivityEvent;
@@ -137,6 +150,7 @@ export interface Repositories {
   tasks: TaskRepository;
   approvals: ApprovalRepository;
   activity: ActivityRepository;
+  results: TaskResultRepository;
   /**
    * Run a block atomically. SQLite gives this for free; a Postgres
    * implementation would open a transaction and pass a scoped client.

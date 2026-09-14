@@ -71,6 +71,28 @@ export const config = {
 
   /** SSE keep-alive interval. Below the 30s most proxies time out at. */
   heartbeatMs: int('HEARTBEAT_MS', 20_000),
+
+  // ── Real agent runtime ──────────────────────────────────────────────────
+  /**
+   * The API key. Read from the environment and never logged, never sent to the
+   * browser, and never written into a prompt or an activity line.
+   *
+   * Left empty when unset: the app still runs on the mock engine, and asking to
+   * execute a real agent says plainly that no key is configured.
+   */
+  anthropicApiKey: str('ANTHROPIC_API_KEY', ''),
+
+  /** Which model backs a live agent, unless one is set on the agent itself. */
+  agentModel: str('AGENT_MODEL', 'claude-opus-5'),
+
+  /** How many web searches one research run may perform. */
+  agentMaxSearches: int('AGENT_MAX_SEARCHES', 8),
 } as const;
+
+/** The default model a newly hired agent runs on. */
+export const DEFAULT_AGENT_MODEL = config.agentModel;
+
+/** True when a real agent could actually be executed. */
+export const hasAgentCredentials = (): boolean => config.anthropicApiKey.length > 0;
 
 export const isProduction = config.env === 'production';

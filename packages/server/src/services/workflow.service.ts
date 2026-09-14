@@ -24,6 +24,8 @@ import { invalid, notFound, refuse } from '../errors.js';
 import { newId } from '../ids.js';
 import type { Repositories } from '../repositories/types.js';
 import { ChangeSet, type EngineChanges } from './agents/agent-engine.js';
+import { RESEARCH_DEFAULTS } from './agents/claude/nova.js';
+import { DEFAULT_AGENT_MODEL } from '../config.js';
 
 /**
  * Everything a person can ask the world to do.
@@ -633,6 +635,12 @@ export class WorkflowService {
       // Assembled from the archetype, then editable per agent.
       instructions: defaultInstructions(profile),
       tools: [...profile.tools],
+      // Execution limits travel with the agent, so a run has a ceiling
+      // even if nobody thought about it when the agent was hired.
+      model: DEFAULT_AGENT_MODEL,
+      maxExecutionMs: RESEARCH_DEFAULTS.maxExecutionMs,
+      maxOutputTokens: RESEARCH_DEFAULTS.maxOutputTokens,
+      requiresApproval: RESEARCH_DEFAULTS.requiresApproval,
       status: 'idle',
       currentTaskId: null,
       currentLocation: homePlotFor(archetype),

@@ -342,4 +342,113 @@ export const MIGRATIONS: Migration[] = [
       CREATE INDEX idx_tasks_building ON tasks(building_key);
     `,
   },
+  {
+    id: 4,
+    name: 'real_agent_runtime',
+    sql: /* sql */ `
+      -- Execution limits, so a run cannot spend unbounded time or tokens.
+      ALTER TABLE agents ADD COLUMN model             TEXT    NOT NULL DEFAULT 'claude-opus-5';
+      ALTER TABLE agents ADD COLUMN max_execution_ms  INTEGER NOT NULL DEFAULT 180000;
+      ALTER TABLE agents ADD COLUMN max_output_tokens INTEGER NOT NULL DEFAULT 16000;
+      ALTER TABLE agents ADD COLUMN requires_approval INTEGER NOT NULL DEFAULT 1;
+
+      -- 'queued' joins the state machine: accepted, not yet started.
+      -- Both tables carry a CHECK, so both are rebuilt rather than altered.
+      CREATE TABLE agents_new (
+        id                TEXT PRIMARY KEY,
+        project_id        TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+        archetype         TEXT NOT NULL,
+        name              TEXT NOT NULL,
+        role              TEXT NOT NULL DEFAULT '',
+        instructions      TEXT NOT NULL DEFAULT '',
+        tools             TEXT NOT NULL DEFAULT '[]',
+        model             TEXT NOT NULL DEFAULT 'claude-opus-5',
+        max_execution_ms  INTEGER NOT NULL DEFAULT 180000,
+        max_output_tokens INTEGER NOT NULL DEFAULT 16000,
+        requires_approval INTEGER NOT NULL DEFAULT 1,
+        status            TEXT NOT NULL DEFAULT 'idle'
+                            CHECK (status IN ('idle', 'queued', 'working', 'waiting_approval',
+                                              'completed', 'paused', 'failed', 'cancelled')),
+        current_task_id   TEXT,
+        current_location  TEXT NOT NULL DEFAULT 'rest',
+        move_from         TEXT,
+        move_to           TEXT,
+        move_departed     INTEGER,
+        move_arrives      INTEGER,
+        progress          REAL NOT NULL DEFAULT 0,
+        created_at        INTEGER NOT NULL,
+        updated_at        INTEGER NOT NULL
+      );
+      INSERT INTO agents_new SELECT
+        id, project_id, archetype, name, role, instructions, tools,
+        model, max_execution_ms, max_output_tokens, requires_approval,
+        status, current_task_id, current_location,
+        move_from, move_to, move_departed, move_arrives,
+        progress, created_at, updated_at
+      FROM agents;
+      DROP TABLE agents;
+      ALTER TABLE agents_new RENAME TO agents;
+
+      CREATE TABLE tasks_new (
+        id                TEXT PRIMARY KEY,
+        project_id        TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+        assigned_agent_id TEXT REFERENCES agents(id) ON DELETE SET NULL,
+        title             TEXT NOT NULL,
+        description       TEXT NOT NULL DEFAULT '',
+        type              TEXT NOT NULL
+                            CHECK (type IN ('planning', 'research', 'coding',
+                                            'writing', 'analysis', 'review')),
+        status            TEXT NOT NULL DEFAULT 'backlog'
+                            CHECK (status IN ('backlog', 'queued', 'working', 'waiting_approval',
+                                              'delivering', 'completed', 'paused',
+                                              'failed', 'cancelled')),
+        priority          TEXT NOT NULL DEFAULT 'normal'
+                            CHECK (priority IN ('low', 'normal', 'high', 'urgent')),
+        building_key      TEXT NOT NULL DEFAULT 'hq',
+        progress          REAL NOT NULL DEFAULT 0,
+        duration_seconds  INTEGER NOT NULL DEFAULT 120,
+        needs_approval    INTEGER NOT NULL DEFAULT 1,
+        blocker           TEXT,
+        created_at        INTEGER NOT NULL,
+        updated_at        INTEGER NOT NULL,
+        started_at        INTEGER,
+        completed_at      INTEGER
+      );
+      INSERT INTO tasks_new SELECT
+        id, project_id, assigned_agent_id, title, description, type, status, priority,
+        building_key, progress, duration_seconds, needs_approval, blocker,
+        created_at, updated_at, started_at, completed_at
+      FROM tasks;
+      DROP TABLE tasks;
+      ALTER TABLE tasks_new RENAME TO tasks;
+
+      -- What an agent produced. Kept separate from the task so a rerun does not
+      -- overwrite the previous attempt.
+      CREATE TABLE task_results (
+        id                    TEXT PRIMARY KEY,
+        task_id               TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+        agent_id              TEXT NOT NULL REFERENCES agents(id) ON DELETE CASCADE,
+        summary               TEXT NOT NULL DEFAULT '',
+        report                TEXT,
+        raw_text              TEXT NOT NULL DEFAULT '',
+        model                 TEXT NOT NULL DEFAULT '',
+        stop_reason           TEXT,
+        input_tokens          INTEGER NOT NULL DEFAULT 0,
+        output_tokens         INTEGER NOT NULL DEFAULT 0,
+        cache_read_tokens     INTEGER NOT NULL DEFAULT 0,
+        cache_creation_tokens INTEGER NOT NULL DEFAULT 0,
+        web_searches          INTEGER NOT NULL DEFAULT 0,
+        duration_ms           INTEGER NOT NULL DEFAULT 0,
+        created_at            INTEGER NOT NULL
+      );
+
+      CREATE INDEX idx_agents_project    ON agents(project_id);
+      CREATE INDEX idx_tasks_project     ON tasks(project_id);
+      CREATE INDEX idx_tasks_agent       ON tasks(assigned_agent_id);
+      CREATE INDEX idx_tasks_status      ON tasks(status);
+      CREATE INDEX idx_tasks_priority    ON tasks(priority);
+      CREATE INDEX idx_tasks_building    ON tasks(building_key);
+      CREATE INDEX idx_results_task      ON task_results(task_id);
+    `,
+  },
 ];

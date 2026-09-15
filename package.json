@@ -2,7 +2,7 @@
   "name": "ai-islands",
   "version": "0.1.0",
   "private": true,
-  "description": "AI Islands — a visual AI-agent workspace",
+  "description": "AI Islands \u2014 a visual AI-agent workspace",
   "workspaces": [
     "packages/shared",
     "packages/server",
@@ -16,7 +16,8 @@
     "build": "npm run build:shared && npm run build -w @ai-islands/server && npm run build -w @ai-islands/web",
     "test": "npm run build:shared && npm run test -w @ai-islands/server",
     "typecheck": "npm run build:shared && npm run typecheck -w @ai-islands/server && npm run typecheck -w @ai-islands/web",
-    "db:reset": "npm run db:reset -w @ai-islands/server"
+    "db:reset": "npm run db:reset -w @ai-islands/server",
+    "agent:nova": "npm run agent:nova -w @ai-islands/server --"
   },
   "devDependencies": {
     "concurrently": "^9.1.0",

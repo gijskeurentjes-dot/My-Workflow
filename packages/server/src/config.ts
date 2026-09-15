@@ -1,10 +1,28 @@
-import 'dotenv/config';
+import dotenv from 'dotenv';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 /** packages/server, whether running from src (tsx) or dist (node). */
 export const PACKAGE_ROOT = path.resolve(here, '..');
+/** The repository root: two levels up from packages/server. */
+export const REPO_ROOT = path.resolve(PACKAGE_ROOT, '..', '..');
+
+/**
+ * Read `.env` from both the package and the repository root.
+ *
+ * npm workspaces run each package from its own directory, so a plain
+ * `dotenv/config` only ever finds `packages/server/.env` — while the README,
+ * the docs and the only `.env.example` in the repo all tell you to create the
+ * file at the root. The key you carefully put in it was then silently ignored,
+ * which is the worst possible failure for a secret: everything appears to work
+ * and the agent simply never has credentials.
+ *
+ * The package file is loaded first because dotenv does not overwrite a variable
+ * that is already set, so a package-local value still wins over the root one.
+ */
+dotenv.config({ path: path.resolve(PACKAGE_ROOT, '.env'), quiet: true });
+dotenv.config({ path: path.resolve(REPO_ROOT, '.env'), quiet: true });
 
 function str(name: string, fallback: string): string {
   const v = process.env[name];

@@ -1,5 +1,8 @@
 import { afterEach, describe, expect, it } from 'vitest';
+import { existsSync, readFileSync } from 'node:fs';
+import path from 'node:path';
 import { buildApprovalRequest } from '@ai-islands/shared';
+import { PACKAGE_ROOT, REPO_ROOT } from '../config.js';
 import { newId } from '../ids.js';
 import { createTestWorld, type TestWorld } from '../test/helpers.js';
 import { reconcileAgentStates } from './recovery.js';
@@ -101,6 +104,26 @@ describe('an agent’s status describes the work it is holding', () => {
     expect(w.repos.agents.findById(agent.id)!.status).toBe('working');
     // And whoever had it is free again.
     expect(w.repos.agents.findById(other.id)!.currentTaskId).toBeNull();
+  });
+});
+
+describe('where the API key is read from', () => {
+  /**
+   * The setup every document describes puts `.env` in the repository root,
+   * while npm workspaces run the server from `packages/server`. When those two
+   * disagreed the key was silently ignored — the worst possible failure for a
+   * secret, because everything appears to work and the agent simply never has
+   * credentials. This pins the arithmetic that keeps them in step.
+   */
+  it('looks in the repository root, where the docs say to put it', () => {
+    const rootPackage = JSON.parse(
+      readFileSync(path.join(REPO_ROOT, 'package.json'), 'utf8'),
+    ) as { workspaces?: string[] };
+
+    // The repo root is the one with the workspaces in it, not a package.
+    expect(rootPackage.workspaces).toBeDefined();
+    expect(existsSync(path.join(REPO_ROOT, '.env.example'))).toBe(true);
+    expect(path.basename(PACKAGE_ROOT)).toBe('server');
   });
 });
 

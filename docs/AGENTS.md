@@ -17,9 +17,14 @@ The key is read from the environment and nothing else. It is never written to
 the database, never sent to the browser, never logged, and never put into a
 prompt or an activity line.
 
+From the repository root — the same folder as `package.json`:
+
 ```bash
 cp .env.example .env
 ```
+
+The server reads `.env` from the repository root *and* from `packages/server`,
+so either works; the root is the one every instruction here means.
 
 Then edit `.env`:
 

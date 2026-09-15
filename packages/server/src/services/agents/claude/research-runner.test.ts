@@ -86,6 +86,9 @@ function buildContext(overrides: Partial<AgentRunContext> = {}): AgentRunContext
     maxExecutionMs: 180_000,
     maxOutputTokens: 16_000,
     maxSearches: 8,
+    // Nova has nothing gated to do, but the gate is part of the contract: a
+    // runner always has one, and refusing everything is the safe stand-in.
+    requestApproval: async () => 'rejected',
     ...overrides,
   };
 }

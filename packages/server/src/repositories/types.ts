@@ -117,6 +117,8 @@ export interface ApprovalRepository {
   list(filter?: { status?: ApprovalStatus }): ApprovalRequest[];
   findById(id: Id): ApprovalRequest | null;
   findPendingByTask(taskId: Id): ApprovalRequest | null;
+  /** Everything this agent is currently waiting on you for. */
+  findPendingByAgent(agentId: Id): ApprovalRequest[];
   create(request: ApprovalRequest): ApprovalRequest;
   decide(
     id: Id,

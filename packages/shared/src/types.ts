@@ -1,5 +1,6 @@
 import type { AgentStatus, MovementState, TaskStatus } from './status.js';
 import type { ProjectTemplate } from './deal-room.js';
+import type { ApprovalCategory, RiskLevel } from './permissions.js';
 
 /** Identifiers are opaque strings everywhere; the database picks the format. */
 export type Id = string;
@@ -349,18 +350,55 @@ export interface ResearchReport {
   confidence: 'low' | 'medium' | 'high';
 }
 
-export type ApprovalStatus = 'pending' | 'approved' | 'rejected';
+/**
+ * Where a request ended up.
+ *
+ * `cancelled` is not a rejection: it means the request was withdrawn — you
+ * called the work off, or the task it belonged to went away — so nobody
+ * decided anything. Keeping them apart matters for the audit log, which is
+ * meant to answer "who decided what" rather than "what happened to end up".
+ */
+export type ApprovalStatus = 'pending' | 'approved' | 'rejected' | 'cancelled';
 
+/**
+ * An agent asking permission before it acts.
+ *
+ * Everything a person needs in order to answer is on the request itself: what
+ * the action is, why, with which tools, what it would touch, and what happens
+ * if it is wrong. A request you cannot evaluate without going and looking
+ * something up is a request that gets rubber-stamped.
+ */
 export interface ApprovalRequest {
   id: Id;
   taskId: Id;
   agentId: Id;
-  /** What the agent is asking you to sign off on. */
+  /** What the agent is asking you to sign off on, in one line. */
   summary: string;
+  /** Which kind of gated action this is. */
+  category: ApprovalCategory;
+  /** The action itself, as an imperative. */
+  action: string;
+  /** Why the agent wants to do it. */
+  reason: string;
+  /** The tools it would use. */
+  tools: string[];
+  /** What could happen if this is wrong. */
+  impact: string;
+  /** Files or records it would touch. */
+  files: string[];
+  risk: RiskLevel;
+  /**
+   * True while a run is actually stopped at this gate.
+   *
+   * A blocking request holds an agent mid-action: approving resumes it,
+   * rejecting makes it stand down. A non-blocking one is finished work waiting
+   * to be delivered.
+   */
+  blocking: boolean;
   status: ApprovalStatus;
   requestedAt: Timestamp;
   decidedAt: Timestamp | null;
-  /** Reviewer's note, set when sending work back. */
+  /** Reviewer's note, set when sending work back or explaining a refusal. */
   note: string | null;
 }
 

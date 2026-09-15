@@ -9,12 +9,19 @@ export function createApprovalRepository(db: Db): ApprovalRepository {
     'SELECT * FROM approval_requests WHERE status = ? ORDER BY requested_at DESC',
   );
   const selectById = db.prepare('SELECT * FROM approval_requests WHERE id = ?');
+  const selectPendingByAgent = db.prepare(
+    "SELECT * FROM approval_requests WHERE agent_id = ? AND status = 'pending' ORDER BY requested_at DESC",
+  );
   const selectPendingByTask = db.prepare(
     "SELECT * FROM approval_requests WHERE task_id = ? AND status = 'pending' ORDER BY requested_at DESC LIMIT 1",
   );
   const insert = db.prepare(`
-    INSERT INTO approval_requests (id, task_id, agent_id, summary, status, requested_at, decided_at, note)
-    VALUES (@id, @task_id, @agent_id, @summary, @status, @requested_at, @decided_at, @note)
+    INSERT INTO approval_requests (id, task_id, agent_id, summary, category, action, reason,
+                                   tools, impact, files, risk, blocking, status,
+                                   requested_at, decided_at, note)
+    VALUES (@id, @task_id, @agent_id, @summary, @category, @action, @reason,
+            @tools, @impact, @files, @risk, @blocking, @status,
+            @requested_at, @decided_at, @note)
   `);
   const decideStmt = db.prepare(
     'UPDATE approval_requests SET status = ?, decided_at = ?, note = ? WHERE id = ?',
@@ -33,6 +40,9 @@ export function createApprovalRepository(db: Db): ApprovalRepository {
 
     findById: read,
 
+    findPendingByAgent: (agentId: Id) =>
+      (selectPendingByAgent.all(agentId) as ApprovalRow[]).map(toApproval),
+
     findPendingByTask: (taskId: Id) => {
       const row = selectPendingByTask.get(taskId) as ApprovalRow | undefined;
       return row ? toApproval(row) : null;
@@ -44,6 +54,14 @@ export function createApprovalRepository(db: Db): ApprovalRepository {
         task_id: request.taskId,
         agent_id: request.agentId,
         summary: request.summary,
+        category: request.category,
+        action: request.action,
+        reason: request.reason,
+        tools: JSON.stringify(request.tools),
+        impact: request.impact,
+        files: JSON.stringify(request.files),
+        risk: request.risk,
+        blocking: request.blocking ? 1 : 0,
         status: request.status,
         requested_at: request.requestedAt,
         decided_at: request.decidedAt,

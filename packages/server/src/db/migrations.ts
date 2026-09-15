@@ -471,4 +471,53 @@ export const MIGRATIONS: Migration[] = [
       ALTER TABLE projects ADD COLUMN template TEXT NOT NULL DEFAULT 'standard';
     `,
   },
+  {
+    id: 7,
+    name: 'rich_approval_requests',
+    sql: /* sql */ `
+      -- An approval request now carries everything a person needs in order to
+      -- answer it: which kind of gated action, the action itself, why, with
+      -- which tools, what it would touch, and what happens if it is wrong.
+      --
+      -- 'cancelled' joins the status set, so a withdrawn request is no longer
+      -- recorded as though someone rejected it. That means rebuilding the
+      -- table rather than altering it, because the CHECK constraint is part of
+      -- the schema. Existing rows are carried over as deliverable approvals,
+      -- which is exactly what they were.
+      CREATE TABLE approvals_new (
+        id            TEXT PRIMARY KEY,
+        task_id       TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+        agent_id      TEXT NOT NULL REFERENCES agents(id) ON DELETE CASCADE,
+        summary       TEXT NOT NULL,
+        category      TEXT NOT NULL DEFAULT 'deliverable',
+        action        TEXT NOT NULL DEFAULT '',
+        reason        TEXT NOT NULL DEFAULT '',
+        tools         TEXT NOT NULL DEFAULT '[]',
+        impact        TEXT NOT NULL DEFAULT '',
+        files         TEXT NOT NULL DEFAULT '[]',
+        risk          TEXT NOT NULL DEFAULT 'low'
+                        CHECK (risk IN ('low', 'medium', 'high')),
+        blocking      INTEGER NOT NULL DEFAULT 0,
+        status        TEXT NOT NULL DEFAULT 'pending'
+                        CHECK (status IN ('pending', 'approved', 'rejected', 'cancelled')),
+        requested_at  INTEGER NOT NULL,
+        decided_at    INTEGER,
+        note          TEXT
+      );
+
+      INSERT INTO approvals_new (id, task_id, agent_id, summary, category, action, reason,
+                                 tools, impact, files, risk, blocking, status,
+                                 requested_at, decided_at, note)
+      SELECT id, task_id, agent_id, summary, 'deliverable', summary, '',
+             '[]', 'Finished work is delivered and the task completes.', '[]', 'low', 0, status,
+             requested_at, decided_at, note
+      FROM approval_requests;
+
+      DROP TABLE approval_requests;
+      ALTER TABLE approvals_new RENAME TO approval_requests;
+
+      CREATE INDEX idx_approvals_status ON approval_requests(status);
+      CREATE INDEX idx_approvals_task   ON approval_requests(task_id);
+    `,
+  },
 ];

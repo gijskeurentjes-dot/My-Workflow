@@ -1,5 +1,6 @@
 import {
   APPROVAL_PLOT,
+  buildApprovalRequest,
   DELIVERY_PLOT,
   PLOTS,
   REST_PLOT,
@@ -264,16 +265,20 @@ export class MockAgentEngine implements AgentEngine {
       );
 
       changes.approval(
-        this.repos.approvals.create({
-          id: newId('apr'),
-          taskId: task.id,
-          agentId: agent.id,
-          summary: `${agent.name} finished “${task.title}” and needs your sign-off before it is delivered.`,
-          status: 'pending',
-          requestedAt: now,
-          decidedAt: null,
-          note: null,
-        }),
+        this.repos.approvals.create(
+          buildApprovalRequest({
+            id: newId('apr'),
+            taskId: task.id,
+            agentId: agent.id,
+            summary: `${agent.name} finished “${task.title}” and needs your sign-off before it is delivered.`,
+            category: 'deliverable',
+            action: `Deliver “${task.title}” to the ${PLOTS[DELIVERY_PLOT].label}`,
+            reason: 'The work is finished and this task was marked as needing your sign-off.',
+            impact:
+              'Approving delivers the work and completes the task. Sending it back reopens it with your note.',
+            requestedAt: now,
+          }),
+        ),
       );
       this.log(
         changes,

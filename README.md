@@ -201,6 +201,25 @@ what the later phases add: **[docs/DEAL-ROOM.md](docs/DEAL-ROOM.md)**.
 
 ---
 
+## Permissions and approvals
+
+**An agent never takes an action with an effect you did not agree to.** Sending,
+spending, deleting, deploying, touching production or another project's files —
+each one stops and waits for a person, and while it waits the agent is genuinely
+stopped: no tokens, no tool calls. Approving resumes it exactly where it
+stopped; refusing means it carries on *without* having done it; cancelling calls
+the work off.
+
+Every request carries what you need in order to answer — the action, why, which
+tools, what it touches, what happens if it is wrong — and appears in the
+approvals inbox, on the agent's own page, and on the task card, with every
+decision written to the activity log.
+
+The categories, the security model behind them, and what happens to a request
+whose run did not survive a restart: **[docs/APPROVALS.md](docs/APPROVALS.md)**.
+
+---
+
 ## Replacing the rest of the mock agents
 
 `MockAgentEngine` implements the `AgentEngine` interface in

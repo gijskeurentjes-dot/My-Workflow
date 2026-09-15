@@ -3,6 +3,7 @@ import { Link, useNavigate, useParams } from 'react-router-dom';
 import { MOVEMENT_LABEL, PLOTS, STATUS_LABEL } from '@ai-islands/shared';
 import { api } from '../api/client.js';
 import { AgentBrief } from '../components/AgentBrief.js';
+import { ApprovalCard } from '../components/ApprovalCard.js';
 import { AgentCharter, AgentTypicalWork, dealDefinitionFor } from '../components/DealRoom.js';
 import { TaskCard } from '../components/TaskCard.js';
 import {
@@ -51,6 +52,10 @@ export function AgentDetail() {
   // A deal-room agent's permissions are part of who it is, so they are shown
   // here rather than buried in the brief text.
   const charter = dealDefinitionFor(agent, project);
+  // What this agent is waiting on you for, right here beside it.
+  const waitingOn = world.approvals.filter(
+    (a) => a.agentId === agent.id && a.status === 'pending',
+  );
   const activity = world.activity.filter((e) => e.agentId === agent.id);
   const history = world.tasks.filter((t) => t.assignedAgentId === agent.id);
 
@@ -162,6 +167,24 @@ export function AgentDetail() {
               </div>
             )}
           </div>
+
+          {waitingOn.length > 0 && (
+            <div className="card">
+              <div className="between" style={{ marginBottom: 8 }}>
+                <h4 style={{ margin: 0 }}>Waiting on you</h4>
+                <span className="count">{waitingOn.length}</span>
+              </div>
+              {waitingOn.map((approval) => (
+                <ApprovalCard
+                  key={approval.id}
+                  world={world}
+                  approval={approval}
+                  now={now}
+                  compact
+                />
+              ))}
+            </div>
+          )}
 
           {/* Drive the work this agent is holding, without leaving the page. */}
           {task && (

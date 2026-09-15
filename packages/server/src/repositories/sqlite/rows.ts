@@ -1,3 +1,4 @@
+import { APPROVAL_CATEGORY_KEYS, RISK_LEVELS } from '@ai-islands/shared';
 import type {
   ActivityEvent,
   ActivityEventType,
@@ -164,10 +165,30 @@ export interface ApprovalRow {
   task_id: string;
   agent_id: string;
   summary: string;
+  category: string;
+  action: string;
+  reason: string;
+  /** JSON array. */
+  tools: string;
+  impact: string;
+  /** JSON array. */
+  files: string;
+  risk: string;
+  blocking: number;
   status: string;
   requested_at: number;
   decided_at: number | null;
   note: string | null;
+}
+
+/** A stored list that will not parse must not break reading the queue. */
+function parseList(raw: string): string[] {
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    return Array.isArray(parsed) ? parsed.filter((v): v is string => typeof v === 'string') : [];
+  } catch {
+    return [];
+  }
 }
 
 export const toApproval = (r: ApprovalRow): ApprovalRequest => ({
@@ -175,6 +196,20 @@ export const toApproval = (r: ApprovalRow): ApprovalRequest => ({
   taskId: r.task_id,
   agentId: r.agent_id,
   summary: r.summary,
+  // An unrecognised category reads as the configured catch-all rather than
+  // throwing: a queue that will not render is worse than a vague label.
+  category: (APPROVAL_CATEGORY_KEYS as readonly string[]).includes(r.category)
+    ? (r.category as ApprovalRequest['category'])
+    : 'configured',
+  action: r.action,
+  reason: r.reason,
+  tools: parseList(r.tools),
+  impact: r.impact,
+  files: parseList(r.files),
+  risk: (RISK_LEVELS as readonly string[]).includes(r.risk)
+    ? (r.risk as ApprovalRequest['risk'])
+    : 'medium',
+  blocking: r.blocking === 1,
   status: r.status as ApprovalRequest['status'],
   requestedAt: r.requested_at,
   decidedAt: r.decided_at,

@@ -1,5 +1,6 @@
 import {
   ARCHETYPES,
+  buildApprovalRequest,
   DEMO_PROJECTS,
   TASK_TYPES,
   appearanceForIndex,
@@ -351,16 +352,19 @@ export function seedWorld(repos: Repositories, now: number = Date.now()): SeedRe
       const task = taskByKey.get(waiting.key);
       const agent = agentByKey.get(waiting.agent);
       if (task && agent) {
-        repos.approvals.create({
-          id: newId('apr'),
-          taskId: task.id,
-          agentId: agent.id,
-          summary: `${agent.name} finished “${task.title}” and needs your sign-off before it is delivered.`,
-          status: 'pending',
-          requestedAt: now - 12 * MINUTE,
-          decidedAt: null,
-          note: null,
-        });
+        repos.approvals.create(
+          buildApprovalRequest({
+            id: newId('apr'),
+            taskId: task.id,
+            agentId: agent.id,
+            summary: `${agent.name} finished “${task.title}” and needs your sign-off before it is delivered.`,
+            category: 'deliverable',
+            action: `Deliver “${task.title}”`,
+            reason: 'The work is finished and this task was marked as needing your sign-off.',
+            impact: 'Approving delivers the work and completes the task.',
+            requestedAt: now - 12 * MINUTE,
+          }),
+        );
       }
     }
 

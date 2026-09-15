@@ -1,6 +1,7 @@
 import type {
   Agent,
   Project,
+  ProposedAction,
   ResearchReport,
   RunUsage,
   Task,
@@ -23,6 +24,18 @@ export interface AgentRunContext {
   maxExecutionMs: number;
   maxOutputTokens: number;
   maxSearches: number;
+  /**
+   * Ask a person before doing something gated, and wait for the answer.
+   *
+   * The only route to an action with an effect outside the work itself. It
+   * resolves with the decision rather than throwing, because being refused is
+   * a normal thing that happens to an agent: the run is expected to carry on
+   * without having done it, and say so.
+   *
+   * While it is pending the run is genuinely stopped — no tokens, no tool
+   * calls — and the execution ceiling is paused.
+   */
+  requestApproval(action: ProposedAction): Promise<'approved' | 'rejected' | 'cancelled'>;
 }
 
 /** Progress reported while a run is in flight. */

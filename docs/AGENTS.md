@@ -242,6 +242,11 @@ check that nothing is missing from it.
 The security rules are enforced in code before a run starts, not left to the
 model's judgement.
 
+Since the approval system landed, these are backed by a gate an agent has to
+pass rather than a sentence in its brief — see
+**[APPROVALS.md](APPROVALS.md)** for the categories, the three answers, and what
+happens when a run does not survive a restart.
+
 | Rule | How it is enforced |
 | ---- | ------------------ |
 | No destructive commands | The only tool ever offered is Anthropic-hosted `web_search`. There is no shell, no filesystem and no code execution anywhere in the runtime. |

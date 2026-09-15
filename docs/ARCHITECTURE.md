@@ -179,6 +179,33 @@ progress it is showing and still say it after a reload. And a live task is
 `queued` until the model call actually begins — the moment of "working" is
 reported by the runner, never assumed by the thing that started it.
 
+#### Stopping to ask
+
+`TaskExecutionService` hands each run a `requestApproval`, and that function is
+the only route to an action with an effect outside the work itself. It is worth
+saying what it actually does: it writes a request, moves the agent to
+`waiting_approval`, publishes, **pauses the execution ceiling**, and awaits a
+promise held in `ApprovalGateRegistry`. Nothing runs until a person answers.
+
+Three decisions here are deliberate:
+
+- **It resolves rather than throws.** Being refused is a normal thing that
+  happens to an agent; a runner is expected to carry on without having done the
+  thing and say so. An exception would make refusal an error path, and error
+  paths get swallowed.
+- **The clock pauses.** Twenty minutes spent reading a request is not the agent
+  overrunning, and killing a run because someone went to lunch would make the
+  gate useless.
+- **A gate cannot outlive the process.** It is a promise in memory, so a
+  restart ends it. `recoverInterruptedRuns` withdraws anything left pending and
+  fails its task with a blocker saying nothing was done — better than a queue
+  full of buttons that would do nothing.
+
+`PermissionService` decides *whether* to ask: `allow`, `deny`, or `approve`.
+The difference between the last two is not severity but capability — an agent
+with no shell cannot be granted one by clicking Approve, so no button is
+offered for it.
+
 #### The real runtime, beside it
 
 There is a second path that does not go through the engine at all.

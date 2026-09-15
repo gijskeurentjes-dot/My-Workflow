@@ -5,6 +5,7 @@ import { createSqliteRepositories } from './repositories/sqlite/index.js';
 import type { Repositories } from './repositories/types.js';
 import { Broadcaster } from './realtime/broadcaster.js';
 import { DomainEventDeriver } from './realtime/domain-events.js';
+import { recoverInterruptedRuns } from './services/recovery.js';
 import type { AgentEngine, EngineChanges } from './services/agents/agent-engine.js';
 import { MockAgentEngine } from './services/agents/mock-agent-engine.js';
 import { WorldService } from './services/world.service.js';
@@ -155,9 +156,19 @@ export function createContext(options: CreateContextOptions = {}): AppContext {
     },
   });
 
+  // Deciding an approval is what releases a run stopped at a gate, so both
+  // services work from the same registry.
+  workflow.useGates(execution.gates);
+
   if (options.seed !== false && isEmptyWorld(repos)) {
     seedWorld(repos);
   }
+
+  // A run stopped at a gate cannot survive a restart: the promise it was
+  // waiting on was in memory. Anything left pending belongs to a run that is
+  // gone, so it is withdrawn and its task is marked failed — nothing was done
+  // without approval, and Retry runs it again.
+  recoverInterruptedRuns(repos);
 
   if (options.autoStart !== false) {
     engine.start();

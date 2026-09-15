@@ -30,6 +30,7 @@ import { invalid, notFound, refuse } from '../errors.js';
 import { newId } from '../ids.js';
 import type { Repositories } from '../repositories/types.js';
 import { ChangeSet, type EngineChanges } from './agents/agent-engine.js';
+import type { ApprovalGateRegistry } from './approval-gates.js';
 import { RESEARCH_DEFAULTS } from './agents/claude/nova.js';
 import { DEFAULT_AGENT_MODEL } from '../config.js';
 
@@ -46,6 +47,19 @@ import { DEFAULT_AGENT_MODEL } from '../config.js';
  * enforced on this side.
  */
 export class WorkflowService {
+  /**
+   * Runs that are stopped, waiting for a decision.
+   *
+   * Injected after construction because the execution service owns the
+   * registry and is built later; when it is absent — a test with no live
+   * runtime — every approval is simply a piece of finished work.
+   */
+  private gates: ApprovalGateRegistry | null = null;
+
+  useGates(gates: ApprovalGateRegistry): void {
+    this.gates = gates;
+  }
+
   constructor(private readonly repos: Repositories) {}
 
   // ── Projects ──────────────────────────────────────────────────────────────
@@ -610,6 +624,26 @@ export class WorkflowService {
       const agent = this.repos.agents.findById(approval.agentId);
 
       changes.approval(this.repos.approvals.decide(approvalId, 'approved', null));
+
+      // A blocking request is a run stopped mid-action. Approving releases it
+      // to carry on: the execution service moves the task and the agent back
+      // to working, because it is the thing that knows the run resumed.
+      if (approval.blocking && !this.gates?.isOpen(approvalId)) {
+        throw refuse(
+          'The run that asked this is no longer going, so there is nothing to let carry on. Retry the task instead.',
+        );
+      }
+
+      if (approval.blocking && this.gates?.settle(approvalId, 'approved')) {
+        this.log(
+          changes,
+          'approved',
+          `You approved: ${agent?.name ?? 'the agent'} may ${approval.action.charAt(0).toLowerCase()}${approval.action.slice(1)}`,
+          { task, agent, at: Date.now() },
+        );
+        return changes.build();
+      }
+
       changes.task(this.repos.tasks.update(task.id, { status: 'delivering' }));
       // The engine takes it from here: the agent walks to the depot, and
       // arriving is what completes the task and adds the crate.
@@ -619,6 +653,54 @@ export class WorkflowService {
         changes,
         'approved',
         `You approved “${task.title}” — ${agent?.name ?? 'the agent'} is delivering it to the ${PLOTS[DELIVERY_PLOT].label}`,
+        { task, agent, at: Date.now() },
+      );
+      return changes.build();
+    });
+  }
+
+  /**
+   * Withdraw a request without deciding it, and call the work off.
+   *
+   * Not a rejection: nobody judged the action, the task simply is not going
+   * ahead. Keeping the two apart is what lets the audit log answer "what did
+   * you decide" separately from "what happened to this work".
+   */
+  cancelApproval(approvalId: Id, note?: string): EngineChanges {
+    const approval = this.repos.approvals.findById(approvalId);
+    if (!approval) throw notFound('Approval request');
+    if (approval.status !== 'pending') throw refuse('That request has already been decided.');
+
+    const task = this.repos.tasks.findById(approval.taskId);
+    if (!task) throw notFound('Task');
+
+    const reason = note?.trim() || 'You cancelled this request.';
+
+    return this.repos.transaction(() => {
+      const changes = new ChangeSet();
+      const agent = this.repos.agents.findById(approval.agentId);
+
+      changes.approval(this.repos.approvals.decide(approvalId, 'cancelled', reason));
+
+      // Releasing the gate aborts the run; the execution service then records
+      // the task as cancelled, so this must not also try to move it.
+      const released = approval.blocking && (this.gates?.settle(approvalId, 'cancelled') ?? false);
+
+      if (!released && !isTerminalTaskStatus(task.status)) {
+        changes.task(
+          this.repos.tasks.update(task.id, {
+            status: 'cancelled',
+            assignedAgentId: null,
+            blocker: null,
+          }),
+        );
+        if (agent) this.releaseAgent(agent.id, changes);
+      }
+
+      this.log(
+        changes,
+        'cancelled',
+        `You cancelled the request on “${task.title}” — the work stops here`,
         { task, agent, at: Date.now() },
       );
       return changes.build();
@@ -637,6 +719,12 @@ export class WorkflowService {
       throw refuse(`That work is no longer waiting for approval — it is ${task.status}.`);
     }
 
+    if (approval.blocking && !this.gates?.isOpen(approvalId)) {
+      throw refuse(
+        'The run that asked this is no longer going, so there is nothing left to refuse. Cancel the request instead.',
+      );
+    }
+
     const trimmed = note?.trim() || null;
 
     return this.repos.transaction(() => {
@@ -644,6 +732,20 @@ export class WorkflowService {
       const agent = this.repos.agents.findById(approval.agentId);
 
       changes.approval(this.repos.approvals.decide(approvalId, 'rejected', trimmed));
+
+      // A refused action is not a refused deliverable: the run carries on, it
+      // simply does not get to do the thing it asked about. The execution
+      // service puts the agent back to work and records the refusal.
+      if (approval.blocking && this.gates?.settle(approvalId, 'rejected')) {
+        this.log(
+          changes,
+          'rejected',
+          `You refused: ${agent?.name ?? 'the agent'} may not ${approval.action.charAt(0).toLowerCase()}${approval.action.slice(1)}${trimmed ? ` — ${trimmed}` : ''}`,
+          { task, agent, at: Date.now() },
+        );
+        return changes.build();
+      }
+
       // Knock progress back so there is real work to redo, rather than the task
       // finishing again on the very next tick.
       const reopenedAt = Math.min(task.progress, 68);
@@ -731,8 +833,10 @@ export class WorkflowService {
   private withdrawApproval(taskId: Id, reason: string, changes: ChangeSet): void {
     const pending = this.repos.approvals.findPendingByTask(taskId);
     if (!pending) return;
-    changes.approval(this.repos.approvals.decide(pending.id, 'rejected', reason));
+    // Withdrawn, not rejected: nobody decided anything, the question went away.
+    changes.approval(this.repos.approvals.decide(pending.id, 'cancelled', reason));
     changes.approvalsDirty();
+    this.gates?.settle(pending.id, 'cancelled');
   }
 
   /**

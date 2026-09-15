@@ -1561,3 +1561,69 @@ textarea.input {
 .pick[aria-disabled='true'] {
   cursor: default;
 }
+
+/* ── An agent asking permission ────────────────────────────────────────────
+   The card has one job: make the decision answerable at a glance. Labelled
+   rows rather than prose, because the reader is checking a few specific
+   things — what, why, what it touches, what it costs if it is wrong. */
+
+.approval {
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  box-shadow: var(--sh-1);
+}
+
+.approval + .approval {
+  margin-top: 10px;
+}
+
+.ask {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 3px 12px;
+  margin: 10px 0 0;
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+
+.ask dt {
+  color: var(--ink-3);
+  font-weight: 700;
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding-top: 2px;
+  white-space: nowrap;
+}
+
+.ask dd {
+  margin: 0;
+  color: var(--ink-2);
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+/* Inside a task card the request is already in context, so it sits flush. */
+.approval-ask .approval {
+  box-shadow: none;
+  border-color: var(--warn);
+  background: var(--warn-bg);
+}
+
+.approval-ask {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  margin-top: 10px;
+}
+
+/* A request needs room: the reader is comparing four labelled rows, and a
+   290px column turns every one of them into three wrapped lines. */
+.grid-asks {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(420px, 1fr));
+  gap: 12px;
+  max-width: 1100px;
+}

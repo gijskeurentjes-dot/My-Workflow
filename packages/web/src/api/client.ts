@@ -147,4 +147,12 @@ export const api = {
 
   approve: (id: Id) => post<ApprovalRequest>(`/approvals/${id}/approve`),
   reject: (id: Id, note?: string) => post<ApprovalRequest>(`/approvals/${id}/reject`, { note }),
+  /**
+   * Withdraw the request and call the work off.
+   *
+   * Its own endpoint rather than a flag on reject, because they are different
+   * answers: refusing an action leaves the agent working, cancelling ends it.
+   */
+  cancelApproval: (id: Id, note?: string) =>
+    post<ApprovalRequest>(`/approvals/${id}/cancel`, { note }),
 };

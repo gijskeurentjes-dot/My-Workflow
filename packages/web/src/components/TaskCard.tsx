@@ -17,6 +17,7 @@ import {
 import { api } from '../api/client.js';
 import { useCommands } from '../world/CommandProvider.js';
 import { toTaskDisplay } from '../world/selectors.js';
+import { ApprovalCard } from './ApprovalCard.js';
 import { TaskResultPanel } from './TaskResult.js';
 import { Avatar, ProgressBar, StatusPill, timeAgo } from './ui.js';
 
@@ -192,40 +193,12 @@ export function TaskCard({
         />
       )}
 
-      {/* Work waiting on a decision is decided here, not only in the queue. */}
-      {approval && (
-        <div className="approval-ask">
-          <span className="eyebrow">Waiting for your decision</span>
-          <p>{approval.summary}</p>
-        </div>
-      )}
-
       {showResult && <TaskResultPanel taskId={task.id} now={now} />}
 
+      {/* Decided here, not only in the queue — with everything needed to decide. */}
       {approval && (
-        <div className="acts" style={{ marginTop: 10 }}>
-          <button
-            className="btn btn-sm btn-primary"
-            disabled={isPending(`approve:${approval.id}`)}
-            onClick={() =>
-              run(
-                `approve:${approval.id}`,
-                () => api.approve(approval.id),
-                'Approved — on its way to the depot',
-              )
-            }
-          >
-            ✓ Approve
-          </button>
-          <button
-            className="btn btn-sm"
-            disabled={isPending(`reject:${approval.id}`)}
-            onClick={() =>
-              run(`reject:${approval.id}`, () => api.reject(approval.id), 'Sent back for changes')
-            }
-          >
-            ↩ Send back
-          </button>
+        <div className="approval-ask">
+          <ApprovalCard world={world} approval={approval} now={now} compact />
         </div>
       )}
 

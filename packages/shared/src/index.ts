@@ -2,6 +2,7 @@ export * from './types.js';
 export * from './status.js';
 export * from './archetypes.js';
 export * from './deal-room.js';
+export * from './permissions.js';
 export * from './appearance.js';
 export * from './geometry.js';
 export * from './events.js';

@@ -6,6 +6,7 @@ import {
   type ActivityEvent,
   type Agent,
   type AgentView,
+  type ApprovalStatus,
   type ApprovalView,
   type EngineInfo,
   type Id,
@@ -147,7 +148,7 @@ export class WorldService {
 
   // ── Approvals ─────────────────────────────────────────────────────────────
 
-  listApprovalViews(status?: 'pending' | 'approved' | 'rejected'): ApprovalView[] {
+  listApprovalViews(status?: ApprovalStatus): ApprovalView[] {
     return this.repos.approvals
       .list(status ? { status } : undefined)
       .map((request) => {

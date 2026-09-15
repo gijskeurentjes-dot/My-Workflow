@@ -1,4 +1,6 @@
 import {
+  APPROVAL_CATEGORIES,
+  buildApprovalRequest,
   type ActivityEvent,
   type ActivityEventType,
   type Agent,
@@ -6,6 +8,7 @@ import {
   type Project,
   type ResearchReport,
   type RunUsage,
+  type ProposedAction,
   type Task,
   type TaskResult,
 } from '@ai-islands/shared';
@@ -18,6 +21,8 @@ import {
   RESEARCH_DEFAULTS,
   isLiveArchetype,
 } from './agents/claude/nova.js';
+import { ApprovalGateRegistry, type ApprovalOutcome } from './approval-gates.js';
+import { permissions, type ActionRequest } from './permissions.service.js';
 import {
   RunLimitError,
   type AgentRunContext,
@@ -31,6 +36,27 @@ interface RunContext extends AgentRunContext {
   startedAt: number;
   /** How many searches have actually been made, counted as they happen. */
   searches: number;
+}
+
+/**
+ * One in-flight run.
+ *
+ * The execution ceiling is held here rather than as a plain timer because it
+ * has to be **paused** while the run is stopped at an approval gate: a person
+ * taking twenty minutes to read a request is not the agent overrunning, and
+ * killing the run because they went to lunch would make the gate useless.
+ */
+interface RunHandle {
+  controller: AbortController;
+  timer: NodeJS.Timeout | null;
+  /** Execution time left, excluding anything spent waiting for a person. */
+  remainingMs: number;
+  /** When the clock was last started. Null while paused at a gate. */
+  runningSince: number | null;
+  /** Set when the ceiling actually fired, so a timeout is never guessed at. */
+  timedOut: boolean;
+  /** Total time spent waiting for a decision, for the record. */
+  waitedMs: number;
 }
 
 /**
@@ -57,6 +83,11 @@ export interface TaskExecutionOptions {
   onEvent?(event: RunEvent): void;
   /** How many searches one run may make. */
   maxSearches?: number;
+  /**
+   * Where runs wait for a person. Shared with the workflow service, which is
+   * what turns your decision into the run resuming.
+   */
+  gates?: ApprovalGateRegistry;
 }
 
 /**
@@ -77,9 +108,10 @@ export class TaskExecutionService {
   private readonly publish: (changes: EngineChanges) => void;
   private readonly onEvent: ((event: RunEvent) => void) | undefined;
   private readonly maxSearches: number;
+  readonly gates: ApprovalGateRegistry;
 
   /** In-flight runs, so a task can be cancelled while the model is thinking. */
-  private readonly running = new Map<Id, AbortController>();
+  private readonly running = new Map<Id, RunHandle>();
 
   constructor(
     private readonly repos: Repositories,
@@ -89,6 +121,7 @@ export class TaskExecutionService {
     this.publish = options.publish;
     this.onEvent = options.onEvent;
     this.maxSearches = options.maxSearches ?? RESEARCH_DEFAULTS.maxSearches;
+    this.gates = options.gates ?? new ApprovalGateRegistry();
   }
 
   /** True when this task could be executed by a real agent right now. */
@@ -119,12 +152,18 @@ export class TaskExecutionService {
       );
     }
 
-    const controller = new AbortController();
-    this.running.set(taskId, controller);
-
+    const handle: RunHandle = {
+      controller: new AbortController(),
+      timer: null,
+      remainingMs: context.maxExecutionMs,
+      runningSince: null,
+      timedOut: false,
+      waitedMs: 0,
+    };
+    this.running.set(taskId, handle);
     // A run that overruns its own limit is aborted rather than left to finish:
     // the ceiling is the point.
-    const deadline = setTimeout(() => controller.abort(), context.maxExecutionMs);
+    this.startClock(handle);
 
     this.markQueued(context);
 
@@ -132,22 +171,50 @@ export class TaskExecutionService {
       const result = await runner.run(
         context,
         (event) => this.onRunEvent(context, event),
-        controller.signal,
+        handle.controller.signal,
       );
       return this.recordSuccess(context, result);
     } catch (error) {
-      if (controller.signal.aborted) {
-        // Distinguish the two ways a run stops early: you cancelled it, or it
-        // ran past its ceiling. They mean different things to the reader.
-        const timedOut = Date.now() - context.startedAt >= context.maxExecutionMs;
-        return this.recordStopped(context, timedOut);
+      if (handle.controller.signal.aborted) {
+        // The two ways a run stops early mean different things to the reader,
+        // and the ceiling records which one happened rather than being inferred
+        // from a clock that pauses at every gate.
+        return this.recordStopped(context, handle.timedOut);
       }
       this.recordFailure(context, error);
       return null;
     } finally {
-      clearTimeout(deadline);
+      this.stopClock(handle);
+      this.withdrawGateFor(taskId, 'The run ended.');
       this.running.delete(taskId);
     }
+  }
+
+  // ── The execution ceiling ─────────────────────────────────────────────────
+
+  private startClock(handle: RunHandle): void {
+    if (handle.timer || handle.remainingMs <= 0) return;
+    handle.runningSince = Date.now();
+    handle.timer = setTimeout(() => {
+      handle.timedOut = true;
+      handle.controller.abort();
+    }, handle.remainingMs);
+  }
+
+  private pauseClock(handle: RunHandle): void {
+    if (!handle.timer) return;
+    clearTimeout(handle.timer);
+    handle.timer = null;
+    if (handle.runningSince !== null) {
+      handle.remainingMs = Math.max(0, handle.remainingMs - (Date.now() - handle.runningSince));
+      handle.runningSince = null;
+    }
+  }
+
+  private stopClock(handle: RunHandle): void {
+    if (handle.timer) clearTimeout(handle.timer);
+    handle.timer = null;
+    handle.runningSince = null;
   }
 
   /**
@@ -190,16 +257,189 @@ export class TaskExecutionService {
 
   /** Stop an in-flight run. Returns false if nothing was running. */
   cancel(taskId: Id): boolean {
-    const controller = this.running.get(taskId);
-    if (!controller) return false;
-    controller.abort();
+    const handle = this.running.get(taskId);
+    if (!handle) return false;
+    // A run stopped at a gate is waiting on a promise, not on the model, so
+    // releasing the gate is what actually lets it unwind.
+    this.gates.cancelForTask(taskId);
+    handle.controller.abort();
     return true;
+  }
+
+  /** True while this run is stopped, waiting for a person to decide. */
+  isWaitingForApproval(taskId: Id): boolean {
+    return this.gates.openForTask(taskId) !== null;
   }
 
   /** Stop everything. Called on shutdown. */
   cancelAll(): void {
-    for (const controller of this.running.values()) controller.abort();
+    this.gates.cancelAll();
+    for (const handle of this.running.values()) handle.controller.abort();
     this.running.clear();
+  }
+
+  // ── Asking before acting ──────────────────────────────────────────────────
+
+  /**
+   * Stop, ask, and wait.
+   *
+   * This is the gate. An agent that wants to do something gated calls it and
+   * genuinely stops: the request appears in your queue, the agent stands at the
+   * Approval Post, and nothing else happens until you answer. The execution
+   * ceiling is paused while it waits, because time spent reading a request is
+   * not time the agent spent working.
+   *
+   * It returns your answer rather than throwing, so a runner has to *handle*
+   * a refusal — standing down is a normal outcome, not an error.
+   */
+  private async requestApproval(
+    context: RunContext,
+    proposed: ProposedAction,
+  ): Promise<ApprovalOutcome> {
+    const handle = this.running.get(context.task.id);
+    if (!handle) return 'cancelled';
+
+    // Checked again here, at the last moment before the request is raised: a
+    // run may not ask for permission to do something no approval could grant.
+    const verdict = permissions.check({
+      agent: context.agent,
+      project: context.project,
+      task: context.task,
+      action: {
+        ...(proposed.category ? { category: proposed.category } : {}),
+        files: proposed.files,
+      } satisfies ActionRequest,
+    });
+    if (verdict.decision === 'deny') {
+      this.recordDenied(context, proposed, verdict.reason);
+      return 'rejected';
+    }
+
+    const now = Date.now();
+    const request = buildApprovalRequest({
+      id: newId('apr'),
+      taskId: context.task.id,
+      agentId: context.agent.id,
+      summary: proposed.action,
+      category: proposed.category,
+      action: proposed.action,
+      reason: proposed.reason,
+      tools: proposed.tools,
+      impact: proposed.impact,
+      files: proposed.files,
+      ...(proposed.risk ? { risk: proposed.risk } : {}),
+      // The distinguishing fact: a run is stopped on this one.
+      blocking: true,
+      requestedAt: now,
+    });
+
+    const changes = new ChangeSet();
+    changes.approval(this.repos.approvals.create(request));
+    changes.task(this.repos.tasks.update(context.task.id, { status: 'waiting_approval' }));
+    changes.agent(
+      this.repos.agents.update(context.agent.id, { status: 'waiting_approval', updatedAt: now }),
+    );
+    this.log(
+      changes,
+      'approval_requested',
+      `${context.agent.name} is asking before ${lowerFirst(proposed.action)} — ${APPROVAL_CATEGORIES[proposed.category].label.toLowerCase()}`,
+      context,
+      now,
+    );
+    this.publish(changes.build());
+
+    // The clock stops here and starts again below: waiting on a person costs
+    // the run nothing.
+    this.pauseClock(handle);
+    const outcome = await this.gates.wait(request.id, context.task.id, context.agent.id);
+    handle.waitedMs += Date.now() - now;
+
+    if (outcome === 'approved') {
+      this.resumeAfterApproval(context, request.action);
+      this.startClock(handle);
+      return 'approved';
+    }
+
+    if (outcome === 'rejected') {
+      // Refused: the agent carries on without doing it, and the refusal is on
+      // the record whether or not the run mentions it again.
+      const resumed = new ChangeSet();
+      resumed.task(this.repos.tasks.update(context.task.id, { status: 'working' }));
+      resumed.agent(
+        this.repos.agents.update(context.agent.id, { status: 'working', updatedAt: Date.now() }),
+      );
+      this.log(
+        resumed,
+        'rejected',
+        `You refused: ${context.agent.name} will not ${lowerFirst(request.action)}`,
+        context,
+        Date.now(),
+      );
+      this.publish(resumed.build());
+      this.startClock(handle);
+      return 'rejected';
+    }
+
+    // Cancelled: the work itself was called off. The run is aborted, and
+    // whatever it was about to do never happens.
+    handle.controller.abort();
+    return 'cancelled';
+  }
+
+  /** Back to work, with the thing you agreed to now permitted. */
+  private resumeAfterApproval(context: RunContext, action: string): void {
+    const now = Date.now();
+    const changes = new ChangeSet();
+    changes.task(this.repos.tasks.update(context.task.id, { status: 'working' }));
+    changes.agent(
+      this.repos.agents.update(context.agent.id, { status: 'working', updatedAt: now }),
+    );
+    this.log(
+      changes,
+      'approved',
+      `You approved: ${context.agent.name} is ${lowerFirst(action)}`,
+      context,
+      now,
+    );
+    this.publish(changes.build());
+  }
+
+  /** An action no approval could have permitted. Recorded, then refused. */
+  private recordDenied(context: RunContext, proposed: ProposedAction, reason: string): void {
+    const changes = new ChangeSet();
+    this.log(
+      changes,
+      'blocked',
+      `${context.agent.name} was refused: ${proposed.action}. ${reason}`,
+      context,
+      Date.now(),
+    );
+    this.publish(changes.build());
+  }
+
+  /**
+   * Close any question this run left hanging.
+   *
+   * Asked from the `finally` of every run, because a request nobody can answer
+   * any more is worse than no request at all: it sits in the queue offering
+   * buttons that would do nothing. Only *blocking* requests are withdrawn — a
+   * finished deliverable waiting for sign-off is exactly what should survive
+   * the run that produced it.
+   */
+  private withdrawGateFor(taskId: Id, reason: string): void {
+    this.gates.cancelForTask(taskId);
+
+    const stranded = this.repos.approvals
+      .list({ status: 'pending' })
+      .filter((a) => a.taskId === taskId && a.blocking);
+    if (stranded.length === 0) return;
+
+    const changes = new ChangeSet();
+    for (const request of stranded) {
+      changes.approval(this.repos.approvals.decide(request.id, 'cancelled', reason));
+    }
+    changes.approvalsDirty();
+    this.publish(changes.build());
   }
 
   // ── Preparing a run ───────────────────────────────────────────────────────
@@ -262,7 +502,7 @@ export class TaskExecutionService {
 
     const tools = this.resolveTools(agent);
 
-    return {
+    const context: RunContext = {
       agent,
       task,
       project,
@@ -273,7 +513,12 @@ export class TaskExecutionService {
       maxSearches: this.maxSearches,
       startedAt: Date.now(),
       searches: 0,
+      // The runner's only way to do something gated: ask, and wait. Bound to
+      // this context so a runner cannot ask on behalf of another task.
+      requestApproval: (proposed: ProposedAction) => this.requestApproval(context, proposed),
     };
+
+    return context;
   }
 
   /**
@@ -452,16 +697,21 @@ export class TaskExecutionService {
 
       if (needsApproval) {
         changes.approval(
-          this.repos.approvals.create({
-            id: newId('apr'),
-            taskId: task.id,
-            agentId: agent.id,
-            summary: result.summary,
-            status: 'pending',
-            requestedAt: now,
-            decidedAt: null,
-            note: null,
-          }),
+          this.repos.approvals.create(
+            buildApprovalRequest({
+              id: newId('apr'),
+              taskId: task.id,
+              agentId: agent.id,
+              summary: result.summary,
+              category: 'deliverable',
+              action: `Deliver ${agent.name}’s result for “${task.title}”`,
+              reason: `${agent.name} finished the run on ${result.model}. This work needs your sign-off before it is delivered.`,
+              tools: context.tools,
+              impact:
+                'Approving delivers the result and completes the task. Sending it back reopens the work with your note.',
+              requestedAt: now,
+            }),
+          ),
         );
         this.log(
           changes,
@@ -553,6 +803,11 @@ export class TaskExecutionService {
     this.repos.activity.create(event);
     changes.activity(event);
   }
+}
+
+/** "Send the pack" → "send the pack", for use mid-sentence. */
+function lowerFirst(text: string): string {
+  return text.charAt(0).toLowerCase() + text.slice(1);
 }
 
 /**

@@ -9,6 +9,9 @@ import type {
   Id,
   PlotKey,
   Project,
+  Milestone,
+  MilestoneStatus,
+  ProjectFile,
   ProjectStatus,
   RunMode,
   Task,
@@ -29,6 +32,10 @@ import type {
 export interface ProjectPatch {
   name?: string;
   description?: string;
+  /** What done looks like. */
+  goals?: string;
+  /** Where the code lives. */
+  repository?: string;
   status?: ProjectStatus;
   color?: string;
 }
@@ -97,6 +104,10 @@ export interface TaskPatch {
   progress?: number;
   /** Set when a real agent takes the work over from the simulation. */
   runMode?: RunMode;
+  /** The task this one breaks out of. */
+  parentTaskId?: Id | null;
+  /** Which milestone it counts towards. */
+  milestoneId?: Id | null;
   needsApproval?: boolean;
   blocker?: string | null;
   startedAt?: number | null;
@@ -111,6 +122,33 @@ export interface TaskRepository {
   delete(id: Id): boolean;
   /** Tasks an engine tick could advance, most urgent first. */
   listAdvanceable(): Task[];
+  /** Record that `taskId` cannot start until `dependsOnId` is finished. */
+  addDependency(taskId: Id, dependsOnId: Id): Task | null;
+  removeDependency(taskId: Id, dependsOnId: Id): Task | null;
+  /** Tasks that are waiting on this one. */
+  listDependents(taskId: Id): Id[];
+}
+
+export interface MilestonePatch {
+  title?: string;
+  description?: string;
+  dueAt?: number | null;
+  status?: MilestoneStatus;
+}
+
+export interface MilestoneRepository {
+  list(projectId?: Id): Milestone[];
+  findById(id: Id): Milestone | null;
+  create(milestone: Milestone): Milestone;
+  update(id: Id, patch: MilestonePatch): Milestone | null;
+  delete(id: Id): boolean;
+}
+
+export interface ProjectFileRepository {
+  list(filter?: { projectId?: Id; taskId?: Id }): ProjectFile[];
+  findById(id: Id): ProjectFile | null;
+  create(file: ProjectFile): ProjectFile;
+  delete(id: Id): boolean;
 }
 
 export interface ApprovalRepository {
@@ -153,6 +191,8 @@ export interface Repositories {
   projects: ProjectRepository;
   agents: AgentRepository;
   tasks: TaskRepository;
+  milestones: MilestoneRepository;
+  files: ProjectFileRepository;
   approvals: ApprovalRepository;
   activity: ActivityRepository;
   results: TaskResultRepository;

@@ -22,6 +22,12 @@ const listQuery = z.object({
 
 const createBody = z.object({
   projectId: z.string().min(1, 'Pick a project'),
+  /** The task this one breaks out of. */
+  parentTaskId: z.string().nullable().optional(),
+  /** Which milestone it counts towards. */
+  milestoneId: z.string().nullable().optional(),
+  /** Tasks that must finish before this one can start. */
+  dependsOn: z.array(z.string()).max(20).optional(),
   title: z.string().min(1, 'A task needs a title').max(160),
   description: z.string().max(1000).optional(),
   type: z.enum(TASK_TYPE_KEYS as [TaskType, ...TaskType[]]),
@@ -38,10 +44,16 @@ const updateBody = z
     description: z.string().max(1000).optional(),
     needsApproval: z.boolean().optional(),
     priority: z.enum(TASK_PRIORITIES).optional(),
+    milestoneId: z.string().nullable().optional(),
   })
   .refine((v) => Object.keys(v).length > 0, { message: 'Nothing to update' });
 
 const assignBody = z.object({ agentId: z.string().min(1, 'Pick an agent') });
+
+/** The lanes a person moves work through by hand. */
+const moveBody = z.object({ to: z.enum(['backlog', 'todo', 'review']) });
+
+const dependencyBody = z.object({ dependsOnId: z.string().min(1, 'Pick a task') });
 
 export function createTasksRouter(ctx: AppContext): Router {
   const router = Router();
@@ -132,6 +144,38 @@ export function createTasksRouter(ctx: AppContext): Router {
         body: ctx.world.findTaskView(req.params.id),
       };
     });
+  });
+
+  router.post('/:id/move', (req, res) => {
+    const body = parseBody(moveBody, req.body, res);
+    if (!body) return;
+    command(ctx, res, () => ({
+      changes: ctx.workflow.moveTask(req.params.id, body.to),
+      body: ctx.world.findTaskView(req.params.id),
+    }));
+  });
+
+  router.post('/:id/sign-off', (req, res) => {
+    command(ctx, res, () => ({
+      changes: ctx.workflow.completeReview(req.params.id),
+      body: ctx.world.findTaskView(req.params.id),
+    }));
+  });
+
+  router.post('/:id/dependencies', (req, res) => {
+    const body = parseBody(dependencyBody, req.body, res);
+    if (!body) return;
+    command(ctx, res, () => ({
+      changes: ctx.workflow.addDependency(req.params.id, body.dependsOnId),
+      body: ctx.world.findTaskView(req.params.id),
+    }));
+  });
+
+  router.delete('/:id/dependencies/:dependsOnId', (req, res) => {
+    command(ctx, res, () => ({
+      changes: ctx.workflow.removeDependency(req.params.id, req.params.dependsOnId),
+      body: ctx.world.findTaskView(req.params.id),
+    }));
   });
 
   for (const [path, run] of [

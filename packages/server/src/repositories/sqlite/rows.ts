@@ -1,4 +1,9 @@
-import { APPROVAL_CATEGORY_KEYS, RISK_LEVELS } from '@ai-islands/shared';
+import {
+  APPROVAL_CATEGORY_KEYS,
+  MILESTONE_STATUSES,
+  PROJECT_FILE_KINDS,
+  RISK_LEVELS,
+} from '@ai-islands/shared';
 import type {
   ActivityEvent,
   ActivityEventType,
@@ -7,7 +12,9 @@ import type {
   ApprovalRequest,
   BiomeKey,
   PlotKey,
+  Milestone,
   Project,
+  ProjectFile,
   Task,
   TaskPriority,
 } from '@ai-islands/shared';
@@ -23,6 +30,8 @@ export interface ProjectRow {
   id: string;
   name: string;
   description: string;
+  goals: string;
+  repository: string;
   status: string;
   template: string;
   color: string;
@@ -39,6 +48,8 @@ export const toProject = (r: ProjectRow): Project => ({
   id: r.id,
   name: r.name,
   description: r.description,
+  goals: r.goals,
+  repository: r.repository,
   status: r.status as Project['status'],
   // An unrecognised template reads as standard: a row written by a newer build
   // must not make an older one refuse to render the world.
@@ -118,6 +129,56 @@ export const toAgent = (r: AgentRow): Agent => ({
   updatedAt: r.updated_at,
 });
 
+export interface MilestoneRow {
+  id: string;
+  project_id: string;
+  title: string;
+  description: string;
+  due_at: number | null;
+  status: string;
+  created_at: number;
+  updated_at: number;
+}
+
+export const toMilestone = (r: MilestoneRow): Milestone => ({
+  id: r.id,
+  projectId: r.project_id,
+  title: r.title,
+  description: r.description,
+  dueAt: r.due_at,
+  status: (MILESTONE_STATUSES as readonly string[]).includes(r.status)
+    ? (r.status as Milestone['status'])
+    : 'open',
+  createdAt: r.created_at,
+  updatedAt: r.updated_at,
+});
+
+export interface ProjectFileRow {
+  id: string;
+  project_id: string;
+  task_id: string | null;
+  agent_id: string | null;
+  name: string;
+  kind: string;
+  location: string;
+  note: string;
+  created_at: number;
+}
+
+export const toProjectFile = (r: ProjectFileRow): ProjectFile => ({
+  id: r.id,
+  projectId: r.project_id,
+  taskId: r.task_id,
+  agentId: r.agent_id,
+  name: r.name,
+  kind: (PROJECT_FILE_KINDS as readonly string[]).includes(r.kind)
+    ? (r.kind as ProjectFile['kind'])
+    : 'other',
+  location: r.location,
+  note: r.note,
+  createdAt: r.created_at,
+});
+
 export interface TaskRow {
   id: string;
   project_id: string;
@@ -134,12 +195,21 @@ export interface TaskRow {
   blocker: string | null;
   created_at: number;
   run_mode: string;
+  parent_task_id: string | null;
+  milestone_id: string | null;
   updated_at: number;
   started_at: number | null;
   completed_at: number | null;
 }
 
-export const toTask = (r: TaskRow): Task => ({
+/**
+ * A task, plus the dependency ids the repository looked up.
+ *
+ * Passed in rather than joined here because `toTask` is called for every row of
+ * every listing: doing a second query per row would turn one board render into
+ * a hundred statements.
+ */
+export const toTask = (r: TaskRow, dependsOn: string[] = []): Task => ({
   id: r.id,
   projectId: r.project_id,
   assignedAgentId: r.assigned_agent_id,
@@ -151,6 +221,9 @@ export const toTask = (r: TaskRow): Task => ({
   buildingKey: r.building_key as PlotKey,
   progress: r.progress,
   runMode: r.run_mode === 'live' ? 'live' : 'simulated',
+  parentTaskId: r.parent_task_id,
+  milestoneId: r.milestone_id,
+  dependsOn,
   durationSeconds: r.duration_seconds,
   needsApproval: r.needs_approval === 1,
   blocker: r.blocker,

@@ -4,6 +4,7 @@ import { PLOTS, PLOT_KEYS, type PlotKey, type TaskStatus } from '@ai-islands/sha
 import { api } from '../api/client.js';
 import { HireAgentDialog, NewTaskDialog } from '../components/CreateDialogs.js';
 import { DealPhases, DealRoomBadge } from '../components/DealRoom.js';
+import { Milestones, ProjectBrief, ProjectFiles } from '../components/ProjectPanels.js';
 import { TaskCard } from '../components/TaskCard.js';
 import {
   ActivityFeed,
@@ -70,6 +71,8 @@ export function ProjectDetail() {
 
   const agents = agentsForProject(world, project.id, clock);
   const dealRoom = project.template === 'deal_room';
+  const milestones = world.milestones.filter((m) => m.projectId === project.id);
+  const files = world.files.filter((f) => f.projectId === project.id);
   const tasks = world.tasks.filter((t) => t.projectId === project.id);
   const done = tasks.filter((t) => t.status === 'completed').length;
   const percent = tasks.length ? Math.round((done / tasks.length) * 100) : 0;
@@ -320,6 +323,12 @@ export function ProjectDetail() {
             ))}
           </div>
 
+          <ProjectBrief project={project} />
+
+          <Milestones project={project} milestones={milestones} tasks={tasks} now={now} />
+
+          <ProjectFiles project={project} files={files} tasks={tasks} now={now} />
+
           {dealRoom && <DealPhases />}
 
           <div className="card">
@@ -425,6 +434,8 @@ export function ProjectDetail() {
         <NewTaskDialog
           projects={world.projects}
           agents={world.agents}
+          tasks={world.tasks}
+          milestones={world.milestones}
           defaultProjectId={project.id}
           onClose={() => setAddingTask(false)}
         />

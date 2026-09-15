@@ -151,6 +151,9 @@ export class MockAgentEngine implements AgentEngine {
   private destinationFor(agent: Agent, task: Task): PlotKey {
     if (task.status === 'delivering') return DELIVERY_PLOT;
     if (task.status === 'waiting_approval') return APPROVAL_PLOT;
+    // Work in review waits at the Meeting Circle with whoever did it: the
+    // island says "being looked at", which is exactly what is happening.
+    if (task.status === 'review') return REST_PLOT;
     // The task's own building is what makes the island legible: research at the
     // library, code at the workshop, slides at the studio. Queued work heads
     // there too — a live run spends its first moments being set up, and the
@@ -222,6 +225,16 @@ export class MockAgentEngine implements AgentEngine {
         changes,
         'arrived',
         `${agent.name} reached the ${PLOTS[task.buildingKey].label} and is ${verb} “${task.title}”`,
+        { task, agent, at: now },
+      );
+      return;
+    }
+
+    if (arrivedAt === REST_PLOT && task.status === 'review') {
+      this.log(
+        changes,
+        'arrived',
+        `${agent.name} is at the ${PLOTS[REST_PLOT].label} with “${task.title}” for review`,
         { task, agent, at: now },
       );
       return;
@@ -364,6 +377,9 @@ export class MockAgentEngine implements AgentEngine {
    * would ask the PM agent to make the call instead.
    */
   private assignFromBacklog(now: number, changes: ChangeSet): void {
+    // Only the backlog. `todo` is a lane a person put work in, and having the
+    // simulation grab it the moment it lands there would make the board feel
+    // like it was fighting you.
     const backlog = this.repos.tasks.list({ status: 'backlog' });
     if (backlog.length === 0) return;
 
@@ -378,6 +394,9 @@ export class MockAgentEngine implements AgentEngine {
     // `backlog` is already urgent-first, so the most important job is offered
     // before anything else is considered.
     for (const task of backlog) {
+      // Work that is waiting on something else is not available to pick up,
+      // however urgent it is. The board says so and so does this.
+      if (task.dependsOn.length > 0 && !this.dependenciesMet(task)) continue;
       const wanted = archetypeForTaskType(task.type);
       // An agent only works its own project's board — a team does not quietly
       // pick up another project's work.
@@ -413,6 +432,13 @@ export class MockAgentEngine implements AgentEngine {
   }
 
   // ───────────────────────────────────────────────────────────────────────────
+
+  /** Every task this one waits on has finished. */
+  private dependenciesMet(task: Task): boolean {
+    return task.dependsOn.every(
+      (id) => this.repos.tasks.findById(id)?.status === 'completed',
+    );
+  }
 
   private log(
     changes: ChangeSet,

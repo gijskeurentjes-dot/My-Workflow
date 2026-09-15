@@ -258,21 +258,42 @@ export function appearanceForIndex(index: number): {
 export const DEMO_PROJECTS: {
   name: string;
   description: string;
+  /** What done looks like, written as a person would write it. */
+  goals: string;
+  repository: string;
   color: string;
 }[] = [
   {
     name: 'Q4 Product Launch',
     description: 'Ship the new pricing page and the launch deck before the quarter closes.',
+    goals: [
+      'The new pricing page is live and converting at least as well as the old one.',
+      'The launch deck is approved by the exec team.',
+      'Support has the answers to the five questions we expect most.',
+    ].join('\n'),
+    repository: 'github.com/example/pricing-site',
     color: '#f4834f',
   },
   {
     name: 'Market Research Refresh',
     description: 'Understand where we sit against the three closest competitors.',
+    goals: [
+      'A current picture of the three competitors we actually lose deals to.',
+      'Every claim in it carries the source it came from.',
+      'The open questions are listed as open, not filled in.',
+    ].join('\n'),
+    repository: '',
     color: '#7a63d8',
   },
   {
     name: 'FY26 Budget',
     description: 'Build a defensible baseline and a lean scenario.',
+    goals: [
+      'A baseline anyone can trace back to its assumptions.',
+      'A lean scenario that survives a 20% revenue miss.',
+      'The model balances, and the checks say so.',
+    ].join('\n'),
+    repository: '',
     color: '#3aa85f',
   },
 ];

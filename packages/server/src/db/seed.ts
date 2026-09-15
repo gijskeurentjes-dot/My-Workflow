@@ -239,6 +239,8 @@ export function seedWorld(repos: Repositories, now: number = Date.now()): SeedRe
         id: newId('prj'),
         name: definition.name,
         description: definition.description,
+        goals: definition.goals,
+        repository: definition.repository,
         status: 'active',
         template: 'standard',
         color: definition.color,
@@ -326,6 +328,9 @@ export function seedWorld(repos: Repositories, now: number = Date.now()): SeedRe
         progress,
         // The demo world is the simulation; only a real run says otherwise.
         runMode: 'simulated',
+        parentTaskId: null,
+        milestoneId: null,
+        dependsOn: [],
         durationSeconds: t.durationSeconds ?? 120,
         needsApproval: t.needsApproval ?? true,
         blocker: t.blocker ?? null,

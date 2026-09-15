@@ -10,12 +10,12 @@ export function createProjectRepository(db: Db): ProjectRepository {
   );
   const selectById = db.prepare('SELECT * FROM projects WHERE id = ?');
   const insert = db.prepare(`
-    INSERT INTO projects (id, name, goal, description, status, template, color,
-                          biome, seed, layout_col, layout_row, crates,
-                          created_at, updated_at)
-    VALUES (@id, @name, @description, @description, @status, @template, @color,
-            @biome, @seed, @layout_col, @layout_row, @crates,
-            @created_at, @updated_at)
+    INSERT INTO projects (id, name, goal, description, goals, repository, status,
+                          template, color, biome, seed, layout_col, layout_row,
+                          crates, created_at, updated_at)
+    VALUES (@id, @name, @description, @description, @goals, @repository, @status,
+            @template, @color, @biome, @seed, @layout_col, @layout_row,
+            @crates, @created_at, @updated_at)
   `);
   const remove = db.prepare('DELETE FROM projects WHERE id = ?');
   const bumpCrate = db.prepare('UPDATE projects SET crates = crates + 1 WHERE id = ?');
@@ -43,6 +43,8 @@ export function createProjectRepository(db: Db): ProjectRepository {
         // `goal` is the pre-rename column; still NOT NULL, so it is kept in
         // step with description rather than left empty.
         description: project.description,
+        goals: project.goals,
+        repository: project.repository,
         status: project.status,
         // Fixed at creation: there is no patch for it, on purpose.
         template: project.template,
@@ -70,6 +72,14 @@ export function createProjectRepository(db: Db): ProjectRepository {
         // Both columns move together while the old one still exists.
         sets.push('description = @description', 'goal = @description');
         params.description = patch.description;
+      }
+      if (patch.goals !== undefined) {
+        sets.push('goals = @goals');
+        params.goals = patch.goals;
+      }
+      if (patch.repository !== undefined) {
+        sets.push('repository = @repository');
+        params.repository = patch.repository;
       }
       if (patch.status !== undefined) {
         sets.push('status = @status');

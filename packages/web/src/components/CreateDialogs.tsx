@@ -6,13 +6,16 @@ import {
   DEAL_ROOM_TEMPLATE,
   PLOTS,
   PRIORITY_LABEL,
+  STATUS_LABEL,
   TASK_PRIORITIES,
   TASK_TYPES,
   TASK_TYPE_KEYS,
   archetypeForTaskType,
   type Agent,
   type AgentArchetype,
+  type Milestone,
   type Project,
+  type Task,
   type ProjectTemplate,
   type TaskPriority,
   type TaskType,
@@ -239,12 +242,19 @@ export function NewProjectDialog({
 export function NewTaskDialog({
   projects,
   agents,
+  tasks = [],
+  milestones = [],
   defaultProjectId,
+  defaultParentTaskId,
   onClose,
 }: {
   projects: Project[];
   agents: Agent[];
+  /** Everything on the board, for choosing a parent or a dependency. */
+  tasks?: Task[];
+  milestones?: Milestone[];
   defaultProjectId?: string;
+  defaultParentTaskId?: string;
   onClose: () => void;
 }) {
   const { run, isPending } = useCommands();
@@ -256,8 +266,23 @@ export function NewTaskDialog({
   const [needsApproval, setNeedsApproval] = useState(true);
   const [assignNow, setAssignNow] = useState(true);
   const [startNow, setStartNow] = useState(false);
+  const [parentTaskId, setParentTaskId] = useState(defaultParentTaskId ?? '');
+  const [milestoneId, setMilestoneId] = useState('');
+  const [dependsOn, setDependsOn] = useState<string[]>([]);
 
   const pending = isPending('create-task');
+
+  // Only this project's work can be a parent, a dependency or a milestone —
+  // the server enforces it, and offering the rest would just be a trap.
+  const projectTasks = tasks.filter((t) => t.projectId === projectId);
+  const parentOptions = projectTasks.filter((t) => !t.parentTaskId);
+  const dependencyOptions = projectTasks.filter((t) => t.status !== 'completed');
+  const projectMilestones = milestones.filter((m) => m.projectId === projectId);
+
+  const toggleDependency = (id: string) =>
+    setDependsOn((current) =>
+      current.includes(id) ? current.filter((d) => d !== id) : [...current, id],
+    );
 
   // The kind of work decides where it happens; the project decides who can.
   const wanted = archetypeForTaskType(type);
@@ -279,6 +304,9 @@ export function NewTaskDialog({
           needsApproval,
           agentId: assignNow ? (owner?.id ?? null) : null,
           autoStart: assignNow && startNow && owner !== null,
+          parentTaskId: parentTaskId || null,
+          milestoneId: milestoneId || null,
+          dependsOn,
         }),
       startNow && assignNow && owner ? 'Task created and started' : 'Task added to the board',
     );
@@ -398,6 +426,74 @@ export function NewTaskDialog({
             ))}
           </div>
         </Field>
+
+        {parentOptions.length > 0 && (
+          <Field
+            label="Part of"
+            hint="Breaking a task down. A subtask cannot have subtasks of its own."
+          >
+            <select
+              className="input"
+              value={parentTaskId}
+              onChange={(e) => setParentTaskId(e.target.value)}
+            >
+              <option value="">Nothing — this is a task in its own right</option>
+              {parentOptions.map((t) => (
+                <option key={t.id} value={t.id}>
+                  {t.title}
+                </option>
+              ))}
+            </select>
+          </Field>
+        )}
+
+        {projectMilestones.length > 0 && (
+          <Field label="Milestone" hint="What this counts towards.">
+            <select
+              className="input"
+              value={milestoneId}
+              onChange={(e) => setMilestoneId(e.target.value)}
+            >
+              <option value="">None</option>
+              {projectMilestones.map((m) => (
+                <option key={m.id} value={m.id}>
+                  {m.title}
+                </option>
+              ))}
+            </select>
+          </Field>
+        )}
+
+        {dependencyOptions.length > 0 && (
+          <Field
+            label="Waits for"
+            hint="It cannot start until these are finished. Enforced, not advisory."
+          >
+            <div className="pickrow">
+              {dependencyOptions.slice(0, 8).map((t) => {
+                const chosen = dependsOn.includes(t.id);
+                return (
+                  <button
+                    key={t.id}
+                    type="button"
+                    role="checkbox"
+                    aria-checked={chosen}
+                    className={`pick${chosen ? ' on' : ''}`}
+                    onClick={() => toggleDependency(t.id)}
+                  >
+                    <span className="pick-ico" aria-hidden="true">
+                      {chosen ? '⏳' : '○'}
+                    </span>
+                    <span>
+                      <b>{t.title}</b>
+                      <span>{STATUS_LABEL[t.status]}</span>
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </Field>
+        )}
 
         <label className="check">
           <input

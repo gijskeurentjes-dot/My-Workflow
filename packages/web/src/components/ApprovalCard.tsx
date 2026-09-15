@@ -118,6 +118,9 @@ export function ApprovalCard({
         )}
       </div>
 
+      {/* On a board card the detail is noise — the request is one of seven
+          lanes and the full case for it is a click away, in the queue. */}
+      {!compact && (
       <dl className="ask">
         {approval.reason && (
           <>
@@ -140,6 +143,7 @@ export function ApprovalCard({
           </>
         )}
       </dl>
+      )}
 
       {mode === 'idle' ? (
         <div className="acts" style={{ marginTop: 12 }}>

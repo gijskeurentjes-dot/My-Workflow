@@ -220,6 +220,27 @@ whose run did not survive a restart: **[docs/APPROVALS.md](docs/APPROVALS.md)**.
 
 ---
 
+## Managing the work
+
+Every project carries its **goals**, its **repository**, its **team**, its
+**milestones**, its **files** and its **activity** — and the board runs in seven
+lanes: Backlog, To do, In progress, Waiting for approval, Review, Completed,
+Failed.
+
+Tasks break into **subtasks**, wait on each other through **dependencies**, and
+count towards **milestones**. A dependency is enforced rather than displayed:
+work that is waiting on something else will not start, and an idle agent will not
+pick it up however urgent it is.
+
+**The task system works without the visual world.** The island is a view of what
+the rules produced — in progress walks an agent to a building, review sends it to
+the Meeting Circle, completed sends it to the depot — but every rule lives in a
+service, with its own tests.
+
+Full detail: **[docs/PROJECTS.md](docs/PROJECTS.md)**.
+
+---
+
 ## Replacing the rest of the mock agents
 
 `MockAgentEngine` implements the `AgentEngine` interface in

@@ -464,6 +464,17 @@ export class TaskExecutionService {
     if (task.status === 'completed' || task.status === 'cancelled') {
       throw refuse(`That task is ${task.status}.`);
     }
+
+    // The same rule the board and the simulation follow: work that is waiting
+    // on something else does not start, however it was asked to.
+    const unmet = task.dependsOn
+      .map((id) => this.repos.tasks.findById(id))
+      .filter((t): t is Task => t !== null && t.status !== 'completed');
+    if (unmet.length > 0) {
+      throw refuse(
+        `“${task.title}” is waiting on ${unmet.map((t) => `“${t.title}”`).join(' and ')}.`,
+      );
+    }
     if (this.running.has(taskId)) {
       throw refuse('That task is already running.');
     }

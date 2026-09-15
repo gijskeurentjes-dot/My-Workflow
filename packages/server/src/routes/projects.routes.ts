@@ -2,6 +2,8 @@ import { Router } from 'express';
 import { z } from 'zod';
 import {
   ARCHETYPE_KEYS,
+  MILESTONE_STATUSES,
+  PROJECT_FILE_KINDS,
   PROJECT_TEMPLATES,
   type AgentArchetype,
   type ProjectTemplate,
@@ -23,16 +25,46 @@ const createBody = z.object({
     .optional(),
   /** Who to hire onto the new project. Defaults to a project manager. */
   team: z.array(z.enum(ARCHETYPE_KEYS as [AgentArchetype, ...AgentArchetype[]])).max(8).optional(),
+  /** What done looks like. */
+  goals: z.string().max(2000).optional(),
+  /** Where the code lives. */
+  repository: z.string().max(400).optional(),
   color: z
     .string()
     .regex(/^#[0-9a-fA-F]{6}$/, 'Colour must be a hex value like #4a8ff0')
     .optional(),
 });
 
+const milestoneBody = z.object({
+  title: z.string().min(1, 'A milestone needs a title').max(160),
+  description: z.string().max(600).optional(),
+  /** Epoch milliseconds, or null for a checkpoint with no date. */
+  dueAt: z.number().int().nullable().optional(),
+});
+
+const milestonePatchBody = z
+  .object({
+    title: z.string().min(1).max(160).optional(),
+    description: z.string().max(600).optional(),
+    dueAt: z.number().int().nullable().optional(),
+    status: z.enum(MILESTONE_STATUSES).optional(),
+  })
+  .refine((v) => Object.keys(v).length > 0, { message: 'Nothing to update' });
+
+const fileBody = z.object({
+  name: z.string().min(1, 'A file needs a name').max(200),
+  kind: z.enum(PROJECT_FILE_KINDS).optional(),
+  location: z.string().max(600).optional(),
+  note: z.string().max(600).optional(),
+  taskId: z.string().nullable().optional(),
+});
+
 const updateBody = z
   .object({
     name: z.string().min(1).max(120).optional(),
     description: z.string().max(600).optional(),
+    goals: z.string().max(2000).optional(),
+    repository: z.string().max(400).optional(),
     status: z.enum(['active', 'paused', 'archived']).optional(),
     color: z.string().regex(/^#[0-9a-fA-F]{6}$/).optional(),
   })
@@ -108,6 +140,72 @@ export function createProjectsRouter(ctx: AppContext): Router {
   router.delete('/:id', (req, res) => {
     command(ctx, res, () => ({
       changes: ctx.workflow.deleteProject(req.params.id),
+      body: { ok: true },
+    }));
+  });
+
+  // ── Milestones ──────────────────────────────────────────────────────────
+
+  router.get('/:id/milestones', (req, res) => {
+    res.json(ctx.world.listMilestoneViews(req.params.id));
+  });
+
+  router.post('/:id/milestones', (req, res) => {
+    const body = parseBody(milestoneBody, req.body, res);
+    if (!body) return;
+    command(
+      ctx,
+      res,
+      () => {
+        const { milestone, changes } = ctx.workflow.createMilestone({
+          projectId: req.params.id,
+          ...body,
+        });
+        return { changes, body: milestone };
+      },
+      201,
+    );
+  });
+
+  router.patch('/:id/milestones/:milestoneId', (req, res) => {
+    const body = parseBody(milestonePatchBody, req.body, res);
+    if (!body) return;
+    command(ctx, res, () => {
+      const { milestone, changes } = ctx.workflow.updateMilestone(req.params.milestoneId, body);
+      return { changes, body: milestone };
+    });
+  });
+
+  router.delete('/:id/milestones/:milestoneId', (req, res) => {
+    command(ctx, res, () => ({
+      changes: ctx.workflow.deleteMilestone(req.params.milestoneId),
+      body: { ok: true },
+    }));
+  });
+
+  // ── Files ───────────────────────────────────────────────────────────────
+
+  router.get('/:id/files', (req, res) => {
+    res.json(ctx.repos.files.list({ projectId: req.params.id }));
+  });
+
+  router.post('/:id/files', (req, res) => {
+    const body = parseBody(fileBody, req.body, res);
+    if (!body) return;
+    command(
+      ctx,
+      res,
+      () => {
+        const { file, changes } = ctx.workflow.addFile({ projectId: req.params.id, ...body });
+        return { changes, body: file };
+      },
+      201,
+    );
+  });
+
+  router.delete('/:id/files/:fileId', (req, res) => {
+    command(ctx, res, () => ({
+      changes: ctx.workflow.removeFile(req.params.fileId),
       body: { ok: true },
     }));
   });

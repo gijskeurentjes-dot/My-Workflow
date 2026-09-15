@@ -45,6 +45,15 @@ export interface Project {
    * undo the point of having a registry.
    */
   template: ProjectTemplate;
+  /**
+   * What done looks like: the outcomes this project is for.
+   *
+   * Free text rather than a list of rows, because a goal is a sentence someone
+   * wrote, and forcing it into fields makes people write worse ones.
+   */
+  goals: string;
+  /** Where the code lives, if it lives anywhere. A URL or a path. */
+  repository: string;
   /** Accent colour used on cards and task chips. */
   color: string;
   appearance: IslandAppearance;
@@ -233,6 +242,22 @@ export interface Task {
   durationSeconds: number;
   /** Whether finishing the work raises an approval request. */
   needsApproval: boolean;
+  /**
+   * The task this one breaks out of, if any.
+   *
+   * One level deep on purpose: a subtask cannot have subtasks. Deep trees are
+   * where task managers go to become unreadable, and nothing here needs one.
+   */
+  parentTaskId: Id | null;
+  /** Which milestone this counts towards. */
+  milestoneId: Id | null;
+  /**
+   * Tasks that must be finished before this one can start.
+   *
+   * Enforced, not advisory: starting a task whose dependencies are unmet is
+   * refused, by the board, by the engine and by the live runtime alike.
+   */
+  dependsOn: Id[];
   /** Set when the task fails: why it stopped and what you need to decide. */
   blocker: string | null;
   createdAt: Timestamp;
@@ -409,6 +434,75 @@ export interface ApprovalView extends ApprovalRequest {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Milestones and files
+// ─────────────────────────────────────────────────────────────────────────────
+
+export const MILESTONE_STATUSES = ['open', 'hit', 'missed'] as const;
+export type MilestoneStatus = (typeof MILESTONE_STATUSES)[number];
+
+/**
+ * A point the project is working towards.
+ *
+ * Tasks belong to one, which is what turns "nine tasks open" into "the IC pack
+ * is two tasks from done".
+ */
+export interface Milestone {
+  id: Id;
+  projectId: Id;
+  title: string;
+  description: string;
+  /** When it is due. Null when it is a checkpoint rather than a deadline. */
+  dueAt: Timestamp | null;
+  status: MilestoneStatus;
+  createdAt: Timestamp;
+  updatedAt: Timestamp;
+}
+
+/** A milestone with the state of the work counted up. */
+export interface MilestoneView extends Milestone {
+  taskCount: number;
+  completedCount: number;
+  /** 0–100, by completed tasks. Zero when nothing is assigned to it yet. */
+  percent: number;
+  /** True when it is past due and not yet hit. */
+  overdue: boolean;
+}
+
+export const PROJECT_FILE_KINDS = [
+  'document',
+  'spreadsheet',
+  'presentation',
+  'data',
+  'code',
+  'report',
+  'other',
+] as const;
+export type ProjectFileKind = (typeof PROJECT_FILE_KINDS)[number];
+
+/**
+ * Something the project has, or produced.
+ *
+ * A **reference**, not the bytes: a name, what kind of thing it is, and where
+ * it lives. This build has no storage of its own, and a registry that says
+ * where something is beats a store that pretends to hold it. A file linked to a
+ * task is that task's deliverable.
+ */
+export interface ProjectFile {
+  id: Id;
+  projectId: Id;
+  /** The task this came out of, when it is a deliverable. */
+  taskId: Id | null;
+  name: string;
+  kind: ProjectFileKind;
+  /** Where it is: a URL, a path, or a note about where to look. */
+  location: string;
+  note: string;
+  /** The agent that produced it, or null when you added it. */
+  agentId: Id | null;
+  createdAt: Timestamp;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // World snapshot — one payload the whole UI can render from
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -416,6 +510,8 @@ export interface WorldSnapshot {
   projects: Project[];
   agents: Agent[];
   tasks: Task[];
+  milestones: Milestone[];
+  files: ProjectFile[];
   approvals: ApprovalRequest[];
   /** Most recent first, capped by the server. */
   activity: ActivityEvent[];

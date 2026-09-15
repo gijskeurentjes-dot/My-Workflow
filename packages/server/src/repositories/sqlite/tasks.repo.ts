@@ -18,15 +18,51 @@ const PRIORITY_ORDER = `
 
 export function createTaskRepository(db: Db): TaskRepository {
   const selectById = db.prepare('SELECT * FROM tasks WHERE id = ?');
+  const selectDeps = db.prepare(
+    'SELECT task_id, depends_on_id FROM task_dependencies ORDER BY created_at',
+  );
+  const selectDepsFor = db.prepare(
+    'SELECT depends_on_id FROM task_dependencies WHERE task_id = ? ORDER BY created_at',
+  );
+  const insertDep = db.prepare(
+    'INSERT OR IGNORE INTO task_dependencies (task_id, depends_on_id, created_at) VALUES (?, ?, ?)',
+  );
+  const deleteDep = db.prepare(
+    'DELETE FROM task_dependencies WHERE task_id = ? AND depends_on_id = ?',
+  );
+  const selectDependents = db.prepare(
+    'SELECT task_id FROM task_dependencies WHERE depends_on_id = ?',
+  );
+
+  /**
+   * Every edge in the graph, in one query.
+   *
+   * Listings hydrate from this rather than asking per row: a board with a
+   * hundred tasks should cost two statements, not a hundred and one.
+   */
+  const dependencyMap = (): Map<string, string[]> => {
+    const map = new Map<string, string[]>();
+    for (const row of selectDeps.all() as { task_id: string; depends_on_id: string }[]) {
+      const list = map.get(row.task_id);
+      if (list) list.push(row.depends_on_id);
+      else map.set(row.task_id, [row.depends_on_id]);
+    }
+    return map;
+  };
+
+  const hydrate = (rows: TaskRow[]): Task[] => {
+    const deps = dependencyMap();
+    return rows.map((row) => toTask(row, deps.get(row.id) ?? []));
+  };
   const insert = db.prepare(`
     INSERT INTO tasks (id, project_id, assigned_agent_id, title, description, type,
                        status, priority, building_key, progress, run_mode,
-                       duration_seconds, needs_approval, blocker, created_at,
-                       updated_at, started_at, completed_at)
+                       duration_seconds, needs_approval, blocker, parent_task_id,
+                       milestone_id, created_at, updated_at, started_at, completed_at)
     VALUES (@id, @project_id, @assigned_agent_id, @title, @description, @type,
             @status, @priority, @building_key, @progress, @run_mode,
-            @duration_seconds, @needs_approval, @blocker, @created_at,
-            @updated_at, @started_at, @completed_at)
+            @duration_seconds, @needs_approval, @blocker, @parent_task_id,
+            @milestone_id, @created_at, @updated_at, @started_at, @completed_at)
   `);
   const remove = db.prepare('DELETE FROM tasks WHERE id = ?');
 
@@ -38,7 +74,9 @@ export function createTaskRepository(db: Db): TaskRepository {
 
   const read = (id: Id): Task | null => {
     const row = selectById.get(id) as TaskRow | undefined;
-    return row ? toTask(row) : null;
+    if (!row) return null;
+    const deps = (selectDepsFor.all(id) as { depends_on_id: string }[]).map((d) => d.depends_on_id);
+    return toTask(row, deps);
   };
 
   return {
@@ -68,7 +106,7 @@ export function createTaskRepository(db: Db): TaskRepository {
       }
 
       const sql = `SELECT * FROM tasks${where.length ? ` WHERE ${where.join(' AND ')}` : ''} ORDER BY ${PRIORITY_ORDER}`;
-      return (db.prepare(sql).all(...params) as TaskRow[]).map(toTask);
+      return hydrate(db.prepare(sql).all(...params) as TaskRow[]);
     },
 
     findById: read,
@@ -89,6 +127,8 @@ export function createTaskRepository(db: Db): TaskRepository {
         duration_seconds: task.durationSeconds,
         needs_approval: task.needsApproval ? 1 : 0,
         blocker: task.blocker,
+        parent_task_id: task.parentTaskId,
+        milestone_id: task.milestoneId,
         created_at: task.createdAt,
         updated_at: task.updatedAt,
         started_at: task.startedAt,
@@ -108,6 +148,8 @@ export function createTaskRepository(db: Db): TaskRepository {
         runMode: 'run_mode',
         needsApproval: 'needs_approval',
         blocker: 'blocker',
+        parentTaskId: 'parent_task_id',
+        milestoneId: 'milestone_id',
         startedAt: 'started_at',
         completedAt: 'completed_at',
       };
@@ -134,6 +176,19 @@ export function createTaskRepository(db: Db): TaskRepository {
 
     delete: (id: Id) => remove.run(id).changes > 0,
 
-    listAdvanceable: () => (advanceable.all(...ACTIVE_TASK_STATUSES) as TaskRow[]).map(toTask),
+    listAdvanceable: () => hydrate(advanceable.all(...ACTIVE_TASK_STATUSES) as TaskRow[]),
+
+    addDependency: (taskId: Id, dependsOnId: Id) => {
+      insertDep.run(taskId, dependsOnId, Date.now());
+      return read(taskId);
+    },
+
+    removeDependency: (taskId: Id, dependsOnId: Id) => {
+      deleteDep.run(taskId, dependsOnId);
+      return read(taskId);
+    },
+
+    listDependents: (taskId: Id) =>
+      (selectDependents.all(taskId) as { task_id: string }[]).map((r) => r.task_id),
   };
 }

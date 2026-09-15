@@ -39,6 +39,7 @@ export function movementState(agent: Pick<Agent, 'status' | 'movement'>): Moveme
     case 'working':
       return 'working';
     case 'waiting_approval':
+    case 'review':
       return 'waiting';
     case 'failed':
       return 'blocked';

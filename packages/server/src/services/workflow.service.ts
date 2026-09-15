@@ -20,6 +20,10 @@ import {
   type AgentArchetype,
   type DealAgentDefinition,
   type Id,
+  type Milestone,
+  type MilestoneStatus,
+  type ProjectFile,
+  type ProjectFileKind,
   type Project,
   type ProjectTemplate,
   type Task,
@@ -29,7 +33,7 @@ import {
 import { invalid, notFound, refuse } from '../errors.js';
 import { newId } from '../ids.js';
 import type { Repositories } from '../repositories/types.js';
-import { ChangeSet, type EngineChanges } from './agents/agent-engine.js';
+import { ChangeSet, NO_CHANGES, type EngineChanges } from './agents/agent-engine.js';
 import type { ApprovalGateRegistry } from './approval-gates.js';
 import { RESEARCH_DEFAULTS } from './agents/claude/nova.js';
 import { DEFAULT_AGENT_MODEL } from '../config.js';
@@ -74,6 +78,10 @@ export class WorkflowService {
     name?: string;
     description?: string;
     color?: string;
+    /** What done looks like. */
+    goals?: string;
+    /** Where the code lives. */
+    repository?: string;
     team?: AgentArchetype[];
     /** Which kind of project. A deal room brings its own fixed team. */
     template?: ProjectTemplate;
@@ -108,6 +116,8 @@ export class WorkflowService {
         description:
           input.description?.trim() ||
           (dealRoom ? DEAL_ROOM_TEMPLATE.defaultDescription : ''),
+        goals: input.goals?.trim() ?? '',
+        repository: input.repository?.trim() ?? '',
         status: 'active',
         template,
         color: input.color ?? (dealRoom ? DEAL_ROOM_TEMPLATE.color : '#4a8ff0'),
@@ -144,7 +154,14 @@ export class WorkflowService {
 
   updateProject(
     id: Id,
-    patch: { name?: string; description?: string; status?: Project['status']; color?: string },
+    patch: {
+      name?: string;
+      description?: string;
+      goals?: string;
+      repository?: string;
+      status?: Project['status'];
+      color?: string;
+    },
   ): { project: Project; changes: EngineChanges } {
     const existing = this.repos.projects.findById(id);
     if (!existing) throw notFound('Project');
@@ -154,6 +171,8 @@ export class WorkflowService {
       const project = this.repos.projects.update(id, {
         ...(patch.name !== undefined ? { name: patch.name.trim() } : {}),
         ...(patch.description !== undefined ? { description: patch.description.trim() } : {}),
+        ...(patch.goals !== undefined ? { goals: patch.goals.trim() } : {}),
+        ...(patch.repository !== undefined ? { repository: patch.repository.trim() } : {}),
         ...(patch.status !== undefined ? { status: patch.status } : {}),
         ...(patch.color !== undefined ? { color: patch.color } : {}),
       });
@@ -325,6 +344,12 @@ export class WorkflowService {
     needsApproval?: boolean;
     agentId?: Id | null;
     autoStart?: boolean;
+    /** The task this one breaks out of. */
+    parentTaskId?: Id | null;
+    /** Which milestone it counts towards. */
+    milestoneId?: Id | null;
+    /** Tasks that must finish first. */
+    dependsOn?: Id[];
   }): { task: Task; changes: EngineChanges } {
     const project = this.repos.projects.findById(input.projectId);
     if (!project) throw notFound('Project');
@@ -332,6 +357,27 @@ export class WorkflowService {
     const title = input.title?.trim();
     if (!title) throw invalid('A task needs a title.');
     if (!TASK_TYPES[input.type]) throw invalid(`Unknown kind of work: ${input.type}`);
+
+    // A subtask belongs to its parent's project, and cannot have subtasks of
+    // its own: one level, so a board stays readable.
+    const parent = input.parentTaskId ? this.repos.tasks.findById(input.parentTaskId) : null;
+    if (input.parentTaskId && !parent) throw notFound('Parent task');
+    if (parent && parent.projectId !== project.id) {
+      throw refuse('A subtask belongs to the same project as the task it breaks out of.');
+    }
+    if (parent?.parentTaskId) {
+      throw refuse(
+        `“${parent.title}” is itself a subtask. Break the parent down instead of nesting further.`,
+      );
+    }
+
+    if (input.milestoneId) {
+      const milestone = this.repos.milestones.findById(input.milestoneId);
+      if (!milestone) throw notFound('Milestone');
+      if (milestone.projectId !== project.id) {
+        throw refuse('That milestone belongs to a different project.');
+      }
+    }
 
     return this.repos.transaction(() => {
       const now = Date.now();
@@ -349,6 +395,9 @@ export class WorkflowService {
         buildingKey: TASK_TYPES[input.type].building,
         progress: 0,
         runMode: 'simulated',
+        parentTaskId: input.parentTaskId ?? null,
+        milestoneId: input.milestoneId ?? null,
+        dependsOn: [],
         // A spread of durations so a board of new tasks does not finish in lockstep.
         durationSeconds: 100 + Math.round(Math.random() * 70),
         needsApproval: input.needsApproval !== false,
@@ -362,6 +411,18 @@ export class WorkflowService {
       const changes = new ChangeSet();
       changes.task(task);
       this.log(changes, 'created', `“${task.title}” was added to the board`, { task, at: now });
+
+      // Dependencies are recorded before the task can be started, so an
+      // autoStart cannot race past work this one is supposed to wait for.
+      for (const dependsOnId of input.dependsOn ?? []) {
+        const dependency = this.repos.tasks.findById(dependsOnId);
+        if (!dependency) throw notFound('Task this one waits for');
+        if (dependency.projectId !== project.id) {
+          throw refuse('Tasks can only wait on work in the same project.');
+        }
+        if (dependency.id === task.id) throw invalid('A task cannot wait for itself.');
+        changes.task(this.repos.tasks.addDependency(task.id, dependsOnId));
+      }
 
       if (input.agentId) {
         this.assignInternal(task.id, input.agentId, changes);
@@ -379,6 +440,7 @@ export class WorkflowService {
       description?: string;
       needsApproval?: boolean;
       priority?: TaskPriority;
+      milestoneId?: Id | null;
     },
   ): { task: Task; changes: EngineChanges } {
     const task = this.requireTask(id);
@@ -420,6 +482,7 @@ export class WorkflowService {
         ...(patch.description !== undefined ? { description: patch.description.trim() } : {}),
         ...(patch.needsApproval !== undefined ? { needsApproval: patch.needsApproval } : {}),
         ...(patch.priority !== undefined ? { priority: patch.priority } : {}),
+        ...(patch.milestoneId !== undefined ? { milestoneId: patch.milestoneId } : {}),
       });
       if (!updated) throw notFound('Task');
 
@@ -608,6 +671,331 @@ export class WorkflowService {
   // ── Approvals ─────────────────────────────────────────────────────────────
 
   /** Sign the work off. The agent carries it to the depot. */
+  /**
+   * Move a task between the board's holding lanes.
+   *
+   * Only the lanes a person moves work through by hand: backlog, to do, and
+   * review. Everything else — working, waiting for approval, delivering — is
+   * the state machine's to set, and letting a drag-and-drop set it would make
+   * the board and the world disagree about what is happening.
+   */
+  moveTask(taskId: Id, to: 'backlog' | 'todo' | 'review'): EngineChanges {
+    const task = this.requireTask(taskId);
+    if (task.status === to) return NO_CHANGES;
+
+    if (isTerminalTaskStatus(task.status)) {
+      throw refuse(`That task is ${task.status}. Reset it to put it back on the board.`);
+    }
+
+    if (to === 'review' && (task.status === 'backlog' || task.status === 'todo')) {
+      throw refuse('Nothing has been done on this yet, so there is nothing to review.');
+    }
+    if (to !== 'review' && (task.status === 'working' || task.status === 'queued')) {
+      throw refuse('That work is running. Pause or cancel it before moving it back.');
+    }
+
+    return this.repos.transaction(() => {
+      const changes = new ChangeSet();
+      const agent = task.assignedAgentId
+        ? this.repos.agents.findById(task.assignedAgentId)
+        : null;
+
+      // Moving finished work back into review withdraws the decision it was
+      // waiting on: you are looking at it yourself now.
+      if (task.status === 'waiting_approval' && to === 'review') {
+        this.withdrawApproval(taskId, 'You took it into review', changes);
+      }
+
+      changes.task(this.repos.tasks.update(taskId, { status: to, blocker: null }));
+
+      if (agent) {
+        if (to === 'review') {
+          // The agent stands at the Meeting Circle with the work while you
+          // look at it — the world says "being checked", because it is.
+          changes.agent(this.repos.agents.update(agent.id, { status: 'review' }));
+        } else {
+          // Back on the board means the agent is free again.
+          this.releaseAgent(agent.id, changes);
+          changes.task(this.repos.tasks.update(taskId, { assignedAgentId: null, progress: 0 }));
+        }
+      }
+
+      const label = to === 'todo' ? 'To do' : to === 'review' ? 'Review' : 'Backlog';
+      this.log(changes, 'system', `“${task.title}” moved to ${label}`, {
+        task,
+        agent,
+        at: Date.now(),
+      });
+      return changes.build();
+    });
+  }
+
+  /**
+   * Finish a task that was in review.
+   *
+   * The end of the path a person drives by hand: you looked at it, it is good,
+   * and it goes out. The agent carries it to the depot exactly as approved work
+   * does, because from the world's point of view that is the same journey.
+   */
+  completeReview(taskId: Id): EngineChanges {
+    const task = this.requireTask(taskId);
+    if (task.status !== 'review') throw refuse('That task is not in review.');
+
+    return this.repos.transaction(() => {
+      const changes = new ChangeSet();
+      const agent = task.assignedAgentId
+        ? this.repos.agents.findById(task.assignedAgentId)
+        : null;
+
+      changes.task(this.repos.tasks.update(taskId, { status: 'delivering', progress: 100 }));
+      if (agent) changes.agent(this.repos.agents.update(agent.id, { status: 'working' }));
+
+      this.log(
+        changes,
+        'approved',
+        `You signed off “${task.title}” — ${agent?.name ?? 'the agent'} is delivering it to the ${PLOTS[DELIVERY_PLOT].label}`,
+        { task, agent, at: Date.now() },
+      );
+      return changes.build();
+    });
+  }
+
+  // ── Dependencies ──────────────────────────────────────────────────────────
+
+  /**
+   * Make one task wait for another.
+   *
+   * Refused when it would create a cycle, because a cycle is a deadlock with
+   * extra steps: two tasks each waiting for the other can never start, and
+   * nothing downstream would be able to explain why.
+   */
+  addDependency(taskId: Id, dependsOnId: Id): EngineChanges {
+    const task = this.requireTask(taskId);
+    const dependency = this.requireTask(dependsOnId);
+
+    if (taskId === dependsOnId) throw invalid('A task cannot wait for itself.');
+    if (task.projectId !== dependency.projectId) {
+      throw refuse('Tasks can only wait on work in the same project.');
+    }
+    if (task.dependsOn.includes(dependsOnId)) return NO_CHANGES;
+    if (this.wouldCycle(dependsOnId, taskId)) {
+      throw refuse(
+        `“${dependency.title}” already waits on “${task.title}”, so this would make a loop neither could start from.`,
+      );
+    }
+
+    return this.repos.transaction(() => {
+      const changes = new ChangeSet();
+      changes.task(this.repos.tasks.addDependency(taskId, dependsOnId));
+      this.log(
+        changes,
+        'system',
+        `“${task.title}” now waits for “${dependency.title}”`,
+        { task, at: Date.now() },
+      );
+      return changes.build();
+    });
+  }
+
+  removeDependency(taskId: Id, dependsOnId: Id): EngineChanges {
+    const task = this.requireTask(taskId);
+    if (!task.dependsOn.includes(dependsOnId)) return NO_CHANGES;
+    const dependency = this.repos.tasks.findById(dependsOnId);
+
+    return this.repos.transaction(() => {
+      const changes = new ChangeSet();
+      changes.task(this.repos.tasks.removeDependency(taskId, dependsOnId));
+      this.log(
+        changes,
+        'system',
+        `“${task.title}” no longer waits for “${dependency?.title ?? 'a deleted task'}”`,
+        { task, at: Date.now() },
+      );
+      return changes.build();
+    });
+  }
+
+  /** True when `from` already depends on `to`, directly or through a chain. */
+  private wouldCycle(from: Id, to: Id, seen = new Set<Id>()): boolean {
+    if (from === to) return true;
+    if (seen.has(from)) return false;
+    seen.add(from);
+
+    const task = this.repos.tasks.findById(from);
+    if (!task) return false;
+    return task.dependsOn.some((next) => this.wouldCycle(next, to, seen));
+  }
+
+  // ── Milestones ────────────────────────────────────────────────────────────
+
+  createMilestone(input: {
+    projectId: Id;
+    title: string;
+    description?: string;
+    dueAt?: number | null;
+  }): { milestone: Milestone; changes: EngineChanges } {
+    const project = this.repos.projects.findById(input.projectId);
+    if (!project) throw notFound('Project');
+
+    const title = input.title?.trim();
+    if (!title) throw invalid('A milestone needs a title.');
+
+    return this.repos.transaction(() => {
+      const now = Date.now();
+      const milestone = this.repos.milestones.create({
+        id: newId('mst'),
+        projectId: project.id,
+        title,
+        description: input.description?.trim() ?? '',
+        dueAt: input.dueAt ?? null,
+        status: 'open',
+        createdAt: now,
+        updatedAt: now,
+      });
+
+      const changes = new ChangeSet();
+      changes.projects();
+      this.log(changes, 'created', `Milestone “${milestone.title}” was added`, {
+        projectId: project.id,
+        at: now,
+      });
+      return { milestone, changes: changes.build() };
+    });
+  }
+
+  updateMilestone(
+    id: Id,
+    patch: { title?: string; description?: string; dueAt?: number | null; status?: MilestoneStatus },
+  ): { milestone: Milestone; changes: EngineChanges } {
+    const existing = this.repos.milestones.findById(id);
+    if (!existing) throw notFound('Milestone');
+    if (patch.title !== undefined && !patch.title.trim()) {
+      throw invalid('A milestone needs a title.');
+    }
+
+    return this.repos.transaction(() => {
+      const milestone = this.repos.milestones.update(id, {
+        ...(patch.title !== undefined ? { title: patch.title.trim() } : {}),
+        ...(patch.description !== undefined ? { description: patch.description.trim() } : {}),
+        ...(patch.dueAt !== undefined ? { dueAt: patch.dueAt } : {}),
+        ...(patch.status !== undefined ? { status: patch.status } : {}),
+      });
+      if (!milestone) throw notFound('Milestone');
+
+      const changes = new ChangeSet();
+      changes.projects();
+      if (patch.status && patch.status !== existing.status) {
+        this.log(
+          changes,
+          patch.status === 'hit' ? 'delivered' : 'system',
+          `Milestone “${milestone.title}” is ${patch.status === 'hit' ? 'hit' : patch.status}`,
+          { projectId: milestone.projectId, at: Date.now() },
+        );
+      }
+      return { milestone, changes: changes.build() };
+    });
+  }
+
+  deleteMilestone(id: Id): EngineChanges {
+    const milestone = this.repos.milestones.findById(id);
+    if (!milestone) throw notFound('Milestone');
+
+    return this.repos.transaction(() => {
+      // Tasks outlive their milestone: the work is still real, it just no
+      // longer counts towards anything.
+      for (const task of this.repos.tasks.list({ projectId: milestone.projectId })) {
+        if (task.milestoneId === id) this.repos.tasks.update(task.id, { milestoneId: null });
+      }
+      this.repos.milestones.delete(id);
+
+      const changes = new ChangeSet();
+      changes.projects();
+      this.log(changes, 'system', `Milestone “${milestone.title}” was removed`, {
+        projectId: milestone.projectId,
+        at: Date.now(),
+      });
+      return changes.build();
+    });
+  }
+
+  // ── Files ─────────────────────────────────────────────────────────────────
+
+  /**
+   * Record something the project has, or produced.
+   *
+   * A reference: a name, a kind and where it lives. Linked to a task, it is
+   * that task's deliverable.
+   */
+  addFile(input: {
+    projectId: Id;
+    taskId?: Id | null;
+    name: string;
+    kind?: ProjectFileKind;
+    location?: string;
+    note?: string;
+    agentId?: Id | null;
+  }): { file: ProjectFile; changes: EngineChanges } {
+    const project = this.repos.projects.findById(input.projectId);
+    if (!project) throw notFound('Project');
+
+    const name = input.name?.trim();
+    if (!name) throw invalid('A file needs a name.');
+
+    const task = input.taskId ? this.repos.tasks.findById(input.taskId) : null;
+    if (input.taskId && !task) throw notFound('Task');
+    if (task && task.projectId !== project.id) {
+      throw refuse('That task belongs to a different project.');
+    }
+
+    return this.repos.transaction(() => {
+      const now = Date.now();
+      const file = this.repos.files.create({
+        id: newId('fil'),
+        projectId: project.id,
+        taskId: task?.id ?? null,
+        agentId: input.agentId ?? null,
+        name,
+        kind: input.kind ?? 'other',
+        location: input.location?.trim() ?? '',
+        note: input.note?.trim() ?? '',
+        createdAt: now,
+      });
+
+      const changes = new ChangeSet();
+      changes.projects();
+      this.log(
+        changes,
+        'created',
+        task ? `“${file.name}” was added as a deliverable of “${task.title}”` : `“${file.name}” was added to the project files`,
+        { task, projectId: project.id, at: now },
+      );
+      return { file, changes: changes.build() };
+    });
+  }
+
+  /**
+   * Remove a file from the register.
+   *
+   * This removes a *reference*, not a file: nothing is deleted anywhere. That
+   * is why it is not gated — the approval category for deleting files is about
+   * an agent destroying something, and nothing here can.
+   */
+  removeFile(id: Id): EngineChanges {
+    const file = this.repos.files.findById(id);
+    if (!file) throw notFound('File');
+
+    return this.repos.transaction(() => {
+      this.repos.files.delete(id);
+      const changes = new ChangeSet();
+      changes.projects();
+      this.log(changes, 'system', `“${file.name}” was removed from the project files`, {
+        projectId: file.projectId,
+        at: Date.now(),
+      });
+      return changes.build();
+    });
+  }
+
   approve(approvalId: Id): EngineChanges {
     const approval = this.repos.approvals.findById(approvalId);
     if (!approval) throw notFound('Approval request');
@@ -830,6 +1218,20 @@ export class WorkflowService {
    * board — has to come through here. Leaving the request behind would show a
    * card in the queue that can never be approved, because its task has moved on.
    */
+  /**
+   * The dependencies of this task that are not finished yet.
+   *
+   * "Finished" means completed. A cancelled dependency still blocks: somebody
+   * decided that work was not happening, and the thing that needed it should
+   * not quietly proceed as though it had.
+   */
+  unmetDependencies(task: Task): Task[] {
+    if (task.dependsOn.length === 0) return [];
+    return task.dependsOn
+      .map((id) => this.repos.tasks.findById(id))
+      .filter((t): t is Task => t !== null && t.status !== 'completed');
+  }
+
   private withdrawApproval(taskId: Id, reason: string, changes: ChangeSet): void {
     const pending = this.repos.approvals.findPendingByTask(taskId);
     if (!pending) return;
@@ -923,6 +1325,16 @@ export class WorkflowService {
 
   private startInternal(taskId: Id, changes: ChangeSet): void {
     const task = this.requireTask(taskId);
+
+    // Dependencies are a promise about order, so they are enforced rather than
+    // displayed: starting work that is waiting on something else is refused
+    // here, by the engine's pickup, and by the live runtime alike.
+    const blocking = this.unmetDependencies(task);
+    if (blocking.length > 0) {
+      throw refuse(
+        `“${task.title}” is waiting on ${blocking.map((t) => `“${t.title}”`).join(' and ')}.`,
+      );
+    }
 
     if (task.status === 'working') throw refuse('That task is already running.');
     if (task.status === 'waiting_approval') throw refuse('That work is finished and waiting on you.');

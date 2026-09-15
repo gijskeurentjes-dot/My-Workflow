@@ -4,7 +4,12 @@ import {
   type AgentArchetype,
   type ApprovalRequest,
   type Id,
+  type Milestone,
+  type MilestoneStatus,
+  type MilestoneView,
   type Project,
+  type ProjectFile,
+  type ProjectFileKind,
   type ProjectTemplate,
   type RuntimeInfo,
   type Task,
@@ -59,6 +64,10 @@ export interface CreateProjectInput {
   /** Optional for a deal room, which names itself. */
   name?: string;
   description?: string;
+  /** What done looks like, one goal per line. */
+  goals?: string;
+  /** Where the code lives. */
+  repository?: string;
   color?: string;
   /** Who to hire onto the new project. Defaults to a project manager. */
   team?: AgentArchetype[];
@@ -75,6 +84,12 @@ export interface CreateTaskInput {
   needsApproval?: boolean;
   agentId?: Id | null;
   autoStart?: boolean;
+  /** The task this one breaks out of. */
+  parentTaskId?: Id | null;
+  /** Which milestone it counts towards. */
+  milestoneId?: Id | null;
+  /** Tasks that must finish before this one can start. */
+  dependsOn?: Id[];
 }
 
 /** An agent's brief: what a real engine would send as its system prompt. */
@@ -105,6 +120,33 @@ export const api = {
     patch<Project>(`/projects/${id}`, input),
   deleteProject: (id: Id) => del<{ ok: true }>(`/projects/${id}`),
 
+  milestones: (projectId: Id) => request<MilestoneView[]>(`/projects/${projectId}/milestones`),
+  createMilestone: (
+    projectId: Id,
+    input: { title: string; description?: string; dueAt?: number | null },
+  ) => post<Milestone>(`/projects/${projectId}/milestones`, input),
+  updateMilestone: (
+    projectId: Id,
+    milestoneId: Id,
+    input: { title?: string; description?: string; dueAt?: number | null; status?: MilestoneStatus },
+  ) => patch<Milestone>(`/projects/${projectId}/milestones/${milestoneId}`, input),
+  deleteMilestone: (projectId: Id, milestoneId: Id) =>
+    del<{ ok: true }>(`/projects/${projectId}/milestones/${milestoneId}`),
+
+  files: (projectId: Id) => request<ProjectFile[]>(`/projects/${projectId}/files`),
+  addFile: (
+    projectId: Id,
+    input: {
+      name: string;
+      kind?: ProjectFileKind;
+      location?: string;
+      note?: string;
+      taskId?: Id | null;
+    },
+  ) => post<ProjectFile>(`/projects/${projectId}/files`, input),
+  removeFile: (projectId: Id, fileId: Id) =>
+    del<{ ok: true }>(`/projects/${projectId}/files/${fileId}`),
+
   createTask: (input: CreateTaskInput) => post<Task>('/tasks', input),
   updateTask: (
     id: Id,
@@ -113,6 +155,7 @@ export const api = {
       description?: string;
       needsApproval?: boolean;
       priority?: TaskPriority;
+      milestoneId?: Id | null;
     },
   ) => patch<Task>(`/tasks/${id}`, input),
   deleteTask: (id: Id) => del<{ ok: true }>(`/tasks/${id}`),
@@ -123,6 +166,15 @@ export const api = {
   pauseTask: (id: Id) => post<unknown>(`/tasks/${id}/pause`),
   cancelTask: (id: Id) => post<unknown>(`/tasks/${id}/cancel`),
   retryTask: (id: Id) => post<unknown>(`/tasks/${id}/retry`),
+  /** Move between the lanes a person drives by hand. */
+  moveTask: (id: Id, to: 'backlog' | 'todo' | 'review') =>
+    post<unknown>(`/tasks/${id}/move`, { to }),
+  /** Finish a task you were reviewing: it goes out like approved work. */
+  signOffTask: (id: Id) => post<unknown>(`/tasks/${id}/sign-off`),
+  addDependency: (id: Id, dependsOnId: Id) =>
+    post<unknown>(`/tasks/${id}/dependencies`, { dependsOnId }),
+  removeDependency: (id: Id, dependsOnId: Id) =>
+    del<unknown>(`/tasks/${id}/dependencies/${dependsOnId}`),
   resetTask: (id: Id) => post<unknown>(`/tasks/${id}/reset`),
 
   hireAgent: (projectId: Id, archetype: AgentArchetype, name?: string) =>

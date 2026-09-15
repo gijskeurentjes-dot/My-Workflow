@@ -8,6 +8,7 @@ import {
   type AgentView,
   type ApprovalStatus,
   type ApprovalView,
+  type MilestoneView,
   type EngineInfo,
   type Id,
   type Project,
@@ -56,6 +57,8 @@ export class WorldService {
       projects,
       agents,
       tasks,
+      milestones: this.repos.milestones.list(),
+      files: this.repos.files.list(),
       approvals: this.repos.approvals.list(),
       activity: this.repos.activity.list({ limit: this.activityLimit }),
       stats: this.statsFrom(agents, tasks, projects),
@@ -147,6 +150,30 @@ export class WorldService {
   }
 
   // ── Approvals ─────────────────────────────────────────────────────────────
+
+  /**
+   * Milestones with the work counted up.
+   *
+   * "Nine tasks open" tells you nothing; "the IC pack is two tasks from done"
+   * is the thing a person actually wants, so the counting happens here rather
+   * than in every screen that shows a milestone.
+   */
+  listMilestoneViews(projectId?: Id): MilestoneView[] {
+    const tasks = this.repos.tasks.list(projectId ? { projectId } : undefined);
+    const now = Date.now();
+
+    return this.repos.milestones.list(projectId).map((milestone) => {
+      const mine = tasks.filter((t) => t.milestoneId === milestone.id);
+      const completed = mine.filter((t) => t.status === 'completed').length;
+      return {
+        ...milestone,
+        taskCount: mine.length,
+        completedCount: completed,
+        percent: mine.length === 0 ? 0 : Math.round((completed / mine.length) * 100),
+        overdue: milestone.status === 'open' && milestone.dueAt !== null && milestone.dueAt < now,
+      };
+    });
+  }
 
   listApprovalViews(status?: ApprovalStatus): ApprovalView[] {
     return this.repos.approvals

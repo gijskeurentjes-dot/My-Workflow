@@ -3,6 +3,8 @@ import { Link } from 'react-router-dom';
 import {
   ARCHETYPES,
   PLOTS,
+  STATUS_LABEL,
+  STATUS_TONE,
   PRIORITY_LABEL,
   PRIORITY_TONE,
   TASK_PRIORITIES,
@@ -61,7 +63,20 @@ export function TaskCard({
     'assign',
     'delete',
     'priority',
+    'move',
+    'signoff',
   ].some((a) => isPending(key(a)));
+
+  // What this task is waiting for, and what it broke into. Both are looked up
+  // rather than stored on the card, so they stay right as the board moves.
+  const waitingFor = task.dependsOn
+    .map((id) => world.tasks.find((t) => t.id === id))
+    .filter((t): t is Task => t !== undefined && t.status !== 'completed');
+  const subtasks = world.tasks.filter((t) => t.parentTaskId === task.id);
+  const doneSubtasks = subtasks.filter((t) => t.status === 'completed').length;
+  const deliverables = world.files.filter((f) => f.taskId === task.id);
+  const milestone = world.milestones.find((m) => m.id === task.milestoneId);
+  const blocked = waitingFor.length > 0;
 
   const approval = world.approvals.find((a) => a.taskId === task.id && a.status === 'pending');
 
@@ -71,11 +86,19 @@ export function TaskCard({
   const canRunForReal =
     world.runtime.available &&
     d.agent !== null &&
+    !blocked &&
     world.runtime.archetypes.includes(d.agent.archetype) &&
-    (task.status === 'backlog' || task.status === 'paused' || task.status === 'failed');
+    (task.status === 'backlog' ||
+      task.status === 'todo' ||
+      task.status === 'paused' ||
+      task.status === 'failed');
   const running = task.status === 'working' || task.status === 'queued';
 
-  const canStart = task.status === 'backlog' || task.status === 'paused';
+  const canStart = task.status === 'backlog' || task.status === 'todo' || task.status === 'paused';
+  const canMoveToDo = task.status === 'backlog';
+  const canReview =
+    task.status === 'waiting_approval' || task.status === 'paused' || task.status === 'failed';
+  const inReview = task.status === 'review';
   // A model call cannot be suspended and picked up later, so pause is not
   // offered for one — the server refuses it too.
   const canPause = task.status === 'working' && !live;
@@ -168,10 +191,95 @@ export function TaskCard({
             delivers without approval
           </span>
         )}
+        {milestone && (
+          <span className="tag" title="The milestone this counts towards">
+            🎯 {milestone.title}
+          </span>
+        )}
+        {subtasks.length > 0 && (
+          <span className="tag" title="Subtasks finished">
+            ☑ {doneSubtasks}/{subtasks.length} subtasks
+          </span>
+        )}
+        {deliverables.length > 0 && (
+          <span className="tag" title="What this task produced">
+            📎 {deliverables.length} {deliverables.length === 1 ? 'deliverable' : 'deliverables'}
+          </span>
+        )}
         {task.status === 'completed' && task.completedAt && (
           <span className="tag">delivered {timeAgo(task.completedAt, now)}</span>
         )}
       </div>
+
+      {/* Waiting on other work is the first thing to say: it explains why
+          nothing is happening, which is otherwise the card's biggest mystery. */}
+      {blocked && (
+        <div className="waiting-on">
+          <span className="eyebrow">Waiting for</span>
+          <ul>
+            {waitingFor.map((dependency) => (
+              <li key={dependency.id}>
+                <span className={`pill tone-${STATUS_TONE[dependency.status]}`}>
+                  <i aria-hidden="true" />
+                  {STATUS_LABEL[dependency.status]}
+                </span>{' '}
+                {dependency.title}
+                {!compact && (
+                  <button
+                    className="icon-btn"
+                    title="Stop waiting for this"
+                    aria-label={`Stop waiting for ${dependency.title}`}
+                    disabled={busy}
+                    onClick={() =>
+                      run(key('dependency'), () => api.removeDependency(task.id, dependency.id))
+                    }
+                  >
+                    ✕
+                  </button>
+                )}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {subtasks.length > 0 && !compact && (
+        <div className="subtasks">
+          <span className="eyebrow">Broken into</span>
+          <ul>
+            {subtasks.map((subtask) => (
+              <li key={subtask.id}>
+                <span className={`pill tone-${STATUS_TONE[subtask.status]}`}>
+                  <i aria-hidden="true" />
+                  {STATUS_LABEL[subtask.status]}
+                </span>{' '}
+                {subtask.title}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {deliverables.length > 0 && !compact && (
+        <div className="subtasks">
+          <span className="eyebrow">Deliverables</span>
+          <ul>
+            {deliverables.map((file) => (
+              <li key={file.id}>
+                📎{' '}
+                {file.location ? (
+                  <a href={file.location} target="_blank" rel="noreferrer noopener">
+                    {file.name}
+                  </a>
+                ) : (
+                  file.name
+                )}
+                {file.note && <span className="muted"> — {file.note}</span>}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
 
       {showProgress && (
         <ProgressBar
@@ -215,14 +323,36 @@ export function TaskCard({
             ✦ {task.status === 'failed' ? 'Run again' : 'Run for real'}
           </button>
         )}
+        {inReview && (
+          <button
+            className="btn btn-sm btn-primary"
+            disabled={busy}
+            title="You have checked it. It goes out."
+            onClick={() => run(key('signoff'), () => api.signOffTask(task.id), 'Signed off')}
+          >
+            ✓ Sign off
+          </button>
+        )}
+        {canMoveToDo && (
+          <button
+            className="btn btn-sm"
+            disabled={busy}
+            title="Ready to start, but not started."
+            onClick={() => run(key('move'), () => api.moveTask(task.id, 'todo'), 'Moved to To do')}
+          >
+            → To do
+          </button>
+        )}
         {canStart && (
           <button
             className={`btn btn-sm${canRunForReal ? '' : ' btn-primary'}`}
-            disabled={busy}
+            disabled={busy || blocked}
             title={
-              canRunForReal
-                ? 'Simulate this work instead of calling a model.'
-                : undefined
+              blocked
+                ? `Waiting for ${waitingFor.map((t) => t.title).join(', ')}`
+                : canRunForReal
+                  ? 'Simulate this work instead of calling a model.'
+                  : undefined
             }
             onClick={() => run(key('start'), () => api.startTask(task.id))}
           >
@@ -238,6 +368,27 @@ export function TaskCard({
             ⏸ Pause
           </button>
         )}
+        {canReview && (
+          <button
+            className="btn btn-sm"
+            disabled={busy}
+            title="Take it away to look at properly."
+            onClick={() => run(key('move'), () => api.moveTask(task.id, 'review'), 'In review')}
+          >
+            👀 Review
+          </button>
+        )}
+        {(inReview || task.status === 'todo') && (
+          <button
+            className="btn btn-sm"
+            disabled={busy}
+            onClick={() =>
+              run(key('move'), () => api.moveTask(task.id, 'backlog'), 'Back on the board')
+            }
+          >
+            ↩ Back to backlog
+          </button>
+        )}
         {canRetry && (
           <button
             className="btn btn-sm btn-primary"
@@ -247,7 +398,7 @@ export function TaskCard({
             ↻ Retry
           </button>
         )}
-        {canCancel && (
+        {canCancel && !compact && (
           <button
             className="btn btn-sm btn-bad"
             disabled={busy}
@@ -266,12 +417,13 @@ export function TaskCard({
             ↺ Put back on the board
           </button>
         )}
-        {!isTerminalTaskStatus(task.status) && (
+        {!isTerminalTaskStatus(task.status) && !compact && (
           <button className="btn btn-sm" disabled={busy} onClick={() => setAssigning((v) => !v)}>
             {d.agent ? 'Reassign' : 'Assign'}
           </button>
         )}
         {!isTerminalTaskStatus(task.status) &&
+          !compact &&
           (changingPriority ? (
             <select
               className="btn btn-sm"
@@ -303,7 +455,7 @@ export function TaskCard({
             </button>
           ))}
 
-        {!confirmingDelete ? (
+        {compact ? null : !confirmingDelete ? (
           <button
             className="icon-btn"
             title="Delete this task"

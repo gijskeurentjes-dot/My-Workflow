@@ -520,4 +520,155 @@ export const MIGRATIONS: Migration[] = [
       CREATE INDEX idx_approvals_task   ON approval_requests(task_id);
     `,
   },
+  {
+    id: 8,
+    name: 'project_management',
+    sql: /* sql */ `
+      -- What the project is for, and where its code lives.
+      ALTER TABLE projects ADD COLUMN goals      TEXT NOT NULL DEFAULT '';
+      ALTER TABLE projects ADD COLUMN repository TEXT NOT NULL DEFAULT '';
+
+      -- A point the project is working towards. Created before the tasks
+      -- table is rebuilt, because tasks reference it.
+      CREATE TABLE milestones (
+        id          TEXT PRIMARY KEY,
+        project_id  TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+        title       TEXT NOT NULL,
+        description TEXT NOT NULL DEFAULT '',
+        due_at      INTEGER,
+        status      TEXT NOT NULL DEFAULT 'open'
+                      CHECK (status IN ('open', 'hit', 'missed')),
+        created_at  INTEGER NOT NULL,
+        updated_at  INTEGER NOT NULL
+      );
+
+      -- Two new states join the board: 'todo' for work that is ready to start,
+      -- and 'review' for work that is finished and being checked. The status
+      -- CHECK is part of the schema, so the table is rebuilt rather than
+      -- altered — and while it is being rebuilt it also gains its parent and
+      -- milestone links.
+      CREATE TABLE tasks_new (
+        id                TEXT PRIMARY KEY,
+        project_id        TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+        assigned_agent_id TEXT REFERENCES agents(id) ON DELETE SET NULL,
+        parent_task_id    TEXT REFERENCES tasks(id) ON DELETE SET NULL,
+        milestone_id      TEXT REFERENCES milestones(id) ON DELETE SET NULL,
+        title             TEXT NOT NULL,
+        description       TEXT NOT NULL DEFAULT '',
+        type              TEXT NOT NULL
+                            CHECK (type IN ('planning', 'research', 'coding',
+                                            'writing', 'analysis', 'review')),
+        status            TEXT NOT NULL DEFAULT 'backlog'
+                            CHECK (status IN ('backlog', 'todo', 'queued', 'working',
+                                              'waiting_approval', 'review', 'delivering',
+                                              'completed', 'paused', 'failed', 'cancelled')),
+        priority          TEXT NOT NULL DEFAULT 'normal'
+                            CHECK (priority IN ('low', 'normal', 'high', 'urgent')),
+        building_key      TEXT NOT NULL DEFAULT 'hq',
+        progress          REAL NOT NULL DEFAULT 0,
+        run_mode          TEXT NOT NULL DEFAULT 'simulated',
+        duration_seconds  INTEGER NOT NULL DEFAULT 120,
+        needs_approval    INTEGER NOT NULL DEFAULT 1,
+        blocker           TEXT,
+        created_at        INTEGER NOT NULL,
+        updated_at        INTEGER NOT NULL,
+        started_at        INTEGER,
+        completed_at      INTEGER
+      );
+
+      INSERT INTO tasks_new (id, project_id, assigned_agent_id, parent_task_id, milestone_id,
+                             title, description, type, status, priority, building_key,
+                             progress, run_mode, duration_seconds, needs_approval, blocker,
+                             created_at, updated_at, started_at, completed_at)
+      SELECT id, project_id, assigned_agent_id, NULL, NULL,
+             title, description, type, status, priority, building_key,
+             progress, run_mode, duration_seconds, needs_approval, blocker,
+             created_at, updated_at, started_at, completed_at
+      FROM tasks;
+
+      DROP TABLE tasks;
+      ALTER TABLE tasks_new RENAME TO tasks;
+
+      -- Agents gain the same 'review' state, so an agent whose work is being
+      -- checked is not mislabelled as waiting for an approval that nobody asked
+      -- for. Its CHECK is part of the schema too.
+      CREATE TABLE agents_new (
+        id                TEXT PRIMARY KEY,
+        project_id        TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+        archetype         TEXT NOT NULL,
+        name              TEXT NOT NULL,
+        role              TEXT NOT NULL DEFAULT '',
+        instructions      TEXT NOT NULL DEFAULT '',
+        tools             TEXT NOT NULL DEFAULT '[]',
+        model             TEXT NOT NULL DEFAULT 'claude-opus-5',
+        max_execution_ms  INTEGER NOT NULL DEFAULT 180000,
+        max_output_tokens INTEGER NOT NULL DEFAULT 16000,
+        requires_approval INTEGER NOT NULL DEFAULT 1,
+        status            TEXT NOT NULL DEFAULT 'idle'
+                            CHECK (status IN ('idle', 'queued', 'working', 'waiting_approval',
+                                              'review', 'completed', 'paused', 'failed',
+                                              'cancelled')),
+        current_task_id   TEXT,
+        current_location  TEXT NOT NULL DEFAULT 'rest',
+        move_from         TEXT,
+        move_to           TEXT,
+        move_departed     INTEGER,
+        move_arrives      INTEGER,
+        progress          REAL NOT NULL DEFAULT 0,
+        created_at        INTEGER NOT NULL,
+        updated_at        INTEGER NOT NULL
+      );
+
+      INSERT INTO agents_new (id, project_id, archetype, name, role, instructions, tools,
+                              model, max_execution_ms, max_output_tokens, requires_approval,
+                              status, current_task_id, current_location, move_from, move_to,
+                              move_departed, move_arrives, progress, created_at, updated_at)
+      SELECT id, project_id, archetype, name, role, instructions, tools,
+             model, max_execution_ms, max_output_tokens, requires_approval,
+             status, current_task_id, current_location, move_from, move_to,
+             move_departed, move_arrives, progress, created_at, updated_at
+      FROM agents;
+
+      DROP TABLE agents;
+      ALTER TABLE agents_new RENAME TO agents;
+
+      -- What must be finished before what. A row is one edge; cycles are
+      -- refused in the service, where the whole graph can be walked.
+      CREATE TABLE task_dependencies (
+        task_id       TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+        depends_on_id TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+        created_at    INTEGER NOT NULL,
+        PRIMARY KEY (task_id, depends_on_id)
+      );
+
+      -- What the project has, or produced. A reference rather than the bytes:
+      -- this build has no storage of its own, and saying where something is
+      -- beats pretending to hold it. Linked to a task, it is a deliverable.
+      CREATE TABLE project_files (
+        id          TEXT PRIMARY KEY,
+        project_id  TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+        task_id     TEXT REFERENCES tasks(id) ON DELETE SET NULL,
+        agent_id    TEXT REFERENCES agents(id) ON DELETE SET NULL,
+        name        TEXT NOT NULL,
+        kind        TEXT NOT NULL DEFAULT 'other',
+        location    TEXT NOT NULL DEFAULT '',
+        note        TEXT NOT NULL DEFAULT '',
+        created_at  INTEGER NOT NULL
+      );
+
+      CREATE INDEX idx_tasks_project     ON tasks(project_id);
+      CREATE INDEX idx_tasks_agent       ON tasks(assigned_agent_id);
+      CREATE INDEX idx_tasks_status      ON tasks(status);
+      CREATE INDEX idx_tasks_priority    ON tasks(priority);
+      CREATE INDEX idx_tasks_building    ON tasks(building_key);
+      CREATE INDEX idx_tasks_parent      ON tasks(parent_task_id);
+      CREATE INDEX idx_tasks_milestone   ON tasks(milestone_id);
+      CREATE INDEX idx_agents_project    ON agents(project_id);
+      CREATE INDEX idx_milestones_project ON milestones(project_id);
+      CREATE INDEX idx_files_project     ON project_files(project_id);
+      CREATE INDEX idx_files_task        ON project_files(task_id);
+      CREATE INDEX idx_deps_task         ON task_dependencies(task_id);
+      CREATE INDEX idx_deps_depends      ON task_dependencies(depends_on_id);
+    `,
+  },
 ];

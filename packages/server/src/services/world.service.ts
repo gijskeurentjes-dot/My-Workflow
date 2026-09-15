@@ -9,6 +9,8 @@ import {
   type ApprovalStatus,
   type ApprovalView,
   type MilestoneView,
+  type UsageReport,
+  type UsageSummary,
   type EngineInfo,
   type Id,
   type Project,
@@ -175,6 +177,50 @@ export class WorldService {
     });
   }
 
+  /**
+   * What live runs have cost, by agent and by project.
+   *
+   * Only real runs appear here: the simulation costs nothing, and a number
+   * that quietly mixed the two would be worse than no number at all.
+   */
+  usage(): UsageReport {
+    const perAgent = this.repos.results.usageByAgent();
+    const agents = new Map(this.repos.agents.list().map((a) => [a.id, a]));
+    const projects = new Map(this.repos.projects.list().map((p) => [p.id, p]));
+
+    const byAgent = perAgent
+      .map((row) => {
+        const agent = agents.get(row.agentId);
+        if (!agent) return null;
+        return {
+          agentId: agent.id,
+          name: agent.name,
+          projectId: agent.projectId,
+          usage: row.usage,
+        };
+      })
+      .filter((row): row is NonNullable<typeof row> => row !== null)
+      .sort((a, b) => b.usage.outputTokens - a.usage.outputTokens);
+
+    const projectTotals = new Map<Id, UsageSummary>();
+    for (const row of byAgent) {
+      const running = projectTotals.get(row.projectId) ?? emptyUsage();
+      projectTotals.set(row.projectId, addUsage(running, row.usage));
+    }
+
+    return {
+      total: this.repos.results.totalUsage(),
+      byAgent,
+      byProject: [...projectTotals.entries()]
+        .map(([projectId, usage]) => ({
+          projectId,
+          name: projects.get(projectId)?.name ?? 'Unknown project',
+          usage,
+        }))
+        .sort((a, b) => b.usage.outputTokens - a.usage.outputTokens),
+    };
+  }
+
   listApprovalViews(status?: ApprovalStatus): ApprovalView[] {
     return this.repos.approvals
       .list(status ? { status } : undefined)
@@ -203,3 +249,27 @@ export class WorldService {
     return this.repos.activity.list({ limit: this.activityLimit, ...filter });
   }
 }
+
+const emptyUsage = (): UsageSummary => ({
+  runs: 0,
+  inputTokens: 0,
+  outputTokens: 0,
+  cacheReadTokens: 0,
+  webSearches: 0,
+  durationMs: 0,
+  lastRunAt: null,
+});
+
+const addUsage = (a: UsageSummary, b: UsageSummary): UsageSummary => ({
+  runs: a.runs + b.runs,
+  inputTokens: a.inputTokens + b.inputTokens,
+  outputTokens: a.outputTokens + b.outputTokens,
+  cacheReadTokens: a.cacheReadTokens + b.cacheReadTokens,
+  webSearches: a.webSearches + b.webSearches,
+  durationMs: a.durationMs + b.durationMs,
+  // The later of the two: "last run" means the most recent one, either side.
+  lastRunAt:
+    a.lastRunAt === null || b.lastRunAt === null
+      ? (a.lastRunAt ?? b.lastRunAt)
+      : Math.max(a.lastRunAt, b.lastRunAt),
+});

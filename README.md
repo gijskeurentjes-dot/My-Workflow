@@ -351,7 +351,9 @@ The world runs, you can drive it, and one agent is real.
 - **The visual world driven by the real backend**: live runs walk the island,
   show their report, and are never confused with simulated ones
 - A named event contract for status, progress, completion, failure and approvals
-- 137 server tests, none of which touch the network
+- Project health on every island: not just *Blocked*, but what is blocked
+- Recent deliverables, and what live runs have actually cost
+- 224 server tests, none of which touch the network
 
 Still to come:
 

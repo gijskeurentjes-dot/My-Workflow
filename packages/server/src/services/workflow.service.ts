@@ -35,6 +35,7 @@ import { newId } from '../ids.js';
 import type { Repositories } from '../repositories/types.js';
 import { ChangeSet, NO_CHANGES, type EngineChanges } from './agents/agent-engine.js';
 import type { ApprovalGateRegistry } from './approval-gates.js';
+import { agentStatusForTask } from './agent-state.js';
 import { RESEARCH_DEFAULTS } from './agents/claude/nova.js';
 import { DEFAULT_AGENT_MODEL } from '../config.js';
 
@@ -1296,10 +1297,12 @@ export class WorkflowService {
     changes.agent(
       this.repos.agents.update(agentId, {
         currentTaskId: taskId,
-        // A completed or failed agent becomes available again on reassignment.
-        ...(agent.status === 'completed' || agent.status === 'failed'
-          ? { status: 'idle' as const }
-          : {}),
+        // An agent's status describes the work it is holding, so taking on
+        // different work re-derives it. Without this an agent that was waiting
+        // for your approval keeps saying so after being moved to something
+        // else — the interface claiming a decision is pending when none is.
+        status: agentStatusForTask(task.status),
+        progress: task.progress,
         ...(transferring
           ? // Arrive at the destination's gate and walk in, so the journey
             // reads as a journey rather than a teleport into a desk.

@@ -16,6 +16,7 @@ import {
   type TaskPriority,
   type TaskResult,
   type TaskType,
+  type UsageReport,
   type WorldSnapshot,
 } from '@ai-islands/shared';
 
@@ -30,10 +31,19 @@ export class ApiError extends Error {
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(`${API_BASE}${path}`, {
-    headers: { 'Content-Type': 'application/json' },
-    ...init,
-  });
+  let res: Response;
+  try {
+    res = await fetch(`${API_BASE}${path}`, {
+      headers: { 'Content-Type': 'application/json' },
+      ...init,
+    });
+  } catch {
+    // `fetch` rejects with "Failed to fetch" for everything from a stopped
+    // server to a dropped wifi connection. Whatever the cause, the useful
+    // thing to say is that the server is not answering — not the browser's
+    // word for it.
+    throw new ApiError('The server is not answering. Is it still running?', 0);
+  }
 
   if (!res.ok) {
     // The API reports refusals as { error } with the rule that was broken, so
@@ -196,6 +206,8 @@ export const api = {
   /** Everything a task has produced, newest first. */
   taskResults: (id: Id) => request<TaskResult[]>(`/tasks/${id}/results`),
   runtime: () => request<RuntimeInfo>('/runtime'),
+  /** What live runs have cost. Empty until a real agent has actually run. */
+  usage: () => request<UsageReport>('/usage'),
 
   approve: (id: Id) => post<ApprovalRequest>(`/approvals/${id}/approve`),
   reject: (id: Id, note?: string) => post<ApprovalRequest>(`/approvals/${id}/reject`, { note }),

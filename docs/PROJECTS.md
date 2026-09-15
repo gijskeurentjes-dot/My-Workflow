@@ -107,6 +107,34 @@ The world follows the work, never the other way round:
 The rule from the runtime milestone still holds underneath all of this: the
 world never shows an agent working unless the backend reports that it is.
 
+## Knowing how a project is doing
+
+Every island reports its **health** — and the reason, not just the word:
+
+> **Blocked** — 1 task stopped and waiting on a decision from you.
+
+In order of urgency: *Blocked* (something failed), *Needs you* (finished work
+waiting for sign-off), *Behind* (a milestone past its due date), *Moving*
+(work under way), *Idle* (open tasks, nobody on them), *All done*, *Empty*.
+"Blocked" on its own leaves you to go and find out what is blocked; the reason
+answers the follow-up before it is asked.
+
+The workspace also lists **recent deliverables** across every project — the
+answer to "so what came out of all this?", which no other screen gives in one
+place.
+
+## What live runs cost
+
+`GET /api/usage` totals what real runs have spent: runs, tokens, searches and
+model time, by agent and by project. It appears on **Settings** for the whole
+world and on each **agent's page** for that agent.
+
+Only live runs are counted. The simulation costs nothing and appears nowhere in
+these numbers — a figure that quietly mixed the two would be worse than none.
+Before anything has run for real it says so, rather than showing a row of
+confident zeroes: a zero reads as a measurement, and "nothing has happened yet"
+is not one.
+
 ## Tests
 
 ```bash

@@ -2,7 +2,14 @@ import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { BIOMES, PLOTS } from '@ai-islands/shared';
 import { NewProjectDialog } from '../components/CreateDialogs.js';
-import { ActivityFeed, Avatar, ProgressBar, SimulatedNotice, StatusPill } from '../components/ui.js';
+import {
+  ActivityFeed,
+  Avatar,
+  ProgressBar,
+  SimulatedNotice,
+  StatusPill,
+  timeAgo,
+} from '../components/ui.js';
 import { useTheme } from '../useTheme.js';
 import { useWorld } from '../world/WorldProvider.js';
 import { useAnimationClock, useSlowClock } from '../world/useAnimationClock.js';
@@ -35,6 +42,11 @@ export function Workspace() {
   const [creating, setCreating] = useState(false);
 
   const summaries = projectSummaries(world);
+  // What the work actually produced, newest first — the answer to "so what
+  // came out of all this?", which no other screen answers in one place.
+  const recentFiles = [...world.files]
+    .sort((a, b) => b.createdAt - a.createdAt)
+    .slice(0, 5);
 
   return (
     <div className="workspace">
@@ -82,17 +94,23 @@ export function Workspace() {
                       <span className="isle-name">{project.name}</span>
                       <span
                         className="pill"
+                        title={summary.health.reason}
                         style={{
                           background: 'transparent',
-                          color: `var(--${summary.state.tone})`,
+                          color: `var(--${summary.health.tone})`,
                           border: '1px solid currentColor',
                         }}
                       >
                         <i style={{ background: 'currentColor' }} aria-hidden="true" />
-                        {summary.state.label}
+                        {summary.health.label}
                       </span>
                     </div>
                     <p className="isle-blurb">{project.description || 'No description yet.'}</p>
+                    {/* The reason, not just the word: "Blocked" on its own
+                        leaves you to go and find out what is blocked. */}
+                    <p className="isle-health" style={{ color: `var(--${summary.health.tone})` }}>
+                      {summary.health.reason}
+                    </p>
                     <div className="isle-meta">
                       <span>
                         <b>{summary.agents.length}</b> agents
@@ -251,6 +269,37 @@ export function Workspace() {
               </div>
             );
           })}
+
+          {recentFiles.length > 0 && (
+            <div className="card">
+              <div className="between" style={{ marginBottom: 8 }}>
+                <h4 style={{ margin: 0 }}>Recent deliverables</h4>
+                <span className="count">{recentFiles.length}</span>
+              </div>
+              <ul className="rule-list">
+                {recentFiles.map((file) => {
+                  const task = world.tasks.find((t) => t.id === file.taskId);
+                  const project = world.projects.find((p) => p.id === file.projectId);
+                  return (
+                    <li key={file.id}>
+                      📎{' '}
+                      {file.location ? (
+                        <a href={file.location} target="_blank" rel="noreferrer noopener">
+                          {file.name}
+                        </a>
+                      ) : (
+                        file.name
+                      )}
+                      <span className="muted" style={{ display: 'block', fontSize: 11 }}>
+                        {project?.name ?? 'A project'}
+                        {task ? ` · ${task.title}` : ''} · {timeAgo(file.createdAt, slowClock)}
+                      </span>
+                    </li>
+                  );
+                })}
+              </ul>
+            </div>
+          )}
 
           <div className="card">
             <div className="between" style={{ marginBottom: 8 }}>

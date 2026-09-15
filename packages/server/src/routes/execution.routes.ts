@@ -20,6 +20,11 @@ export function createExecutionRouter(ctx: AppContext): Router {
     res.json(runtimeInfo());
   });
 
+  /** What live runs have cost. Empty until a real agent has actually run. */
+  router.get('/usage', (_req, res) => {
+    res.json(ctx.world.usage());
+  });
+
   router.post('/tasks/:id/run', (req, res) => {
     command(ctx, res, () => {
       if (!hasAgentCredentials()) {

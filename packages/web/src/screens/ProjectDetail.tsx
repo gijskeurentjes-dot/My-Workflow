@@ -17,7 +17,7 @@ import { useTheme } from '../useTheme.js';
 import { useCommands } from '../world/CommandProvider.js';
 import { useWorld } from '../world/WorldProvider.js';
 import { useAnimationClock, useSlowClock } from '../world/useAnimationClock.js';
-import { agentsForProject } from '../world/selectors.js';
+import { agentsForProject, projectSummaries } from '../world/selectors.js';
 import { IslandScene } from '../world/scene/IslandScene.js';
 
 /** Order the board reads in: what needs you first, finished work last. */
@@ -71,6 +71,7 @@ export function ProjectDetail() {
 
   const agents = agentsForProject(world, project.id, clock);
   const dealRoom = project.template === 'deal_room';
+  const summary = projectSummaries(world).find((s) => s.project.id === project.id);
   const milestones = world.milestones.filter((m) => m.projectId === project.id);
   const files = world.files.filter((f) => f.projectId === project.id);
   const tasks = world.tasks.filter((t) => t.projectId === project.id);
@@ -186,6 +187,15 @@ export function ProjectDetail() {
                 <h2 style={{ fontSize: 19 }}>{project.name}</h2>
                 {dealRoom && <DealRoomBadge />}
               </div>
+              {summary && (
+                <p className="health-line">
+                  <span className={`pill tone-${summary.health.tone}`}>
+                    <i aria-hidden="true" />
+                    {summary.health.label}
+                  </span>{' '}
+                  {summary.health.reason}
+                </p>
+              )}
               <p className="muted" style={{ marginTop: 4 }}>
                 {project.description || 'No description yet.'}
               </p>

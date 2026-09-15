@@ -2,6 +2,7 @@ import {
   ARCHETYPES,
   PLOTS,
   TASK_TYPES,
+  isTerminalTaskStatus,
   describeAgent,
   movementState,
   positionAlongPath,
@@ -174,6 +175,14 @@ export interface ProjectSummary {
   percent: number;
   /** A one-word state for the island card. */
   state: { label: string; tone: string };
+  /**
+   * How the project is actually doing, and why.
+   *
+   * The word alone is not enough to act on: "Blocked" leaves you to go and
+   * find out what is blocked. The reason travels with it, so the card answers
+   * the follow-up question before it is asked.
+   */
+  health: { label: string; tone: string; reason: string };
 }
 
 export function projectSummaries(world: WorldSnapshot): ProjectSummary[] {
@@ -197,6 +206,64 @@ export function projectSummaries(world: WorldSnapshot): ProjectSummary[] {
           ? { label: 'Working', tone: 'ok' }
           : { label: 'Quiet', tone: 'mute' };
 
+    const plural = (n: number, one: string, many = `${one}s`) =>
+      `${n} ${n === 1 ? one : many}`;
+
+    const overdue = world.milestones.filter(
+      (m) =>
+        m.projectId === project.id &&
+        m.status === 'open' &&
+        m.dueAt !== null &&
+        m.dueAt < Date.now(),
+    ).length;
+
+    const openCount = tasks.filter((t) => !isTerminalTaskStatus(t.status)).length;
+
+    // Same order of urgency, but each answer says what to do about it. An
+    // overdue milestone outranks ordinary progress: it is the one thing here
+    // that gets worse on its own while nobody looks.
+    const health = blockedCount
+      ? {
+          label: 'Blocked',
+          tone: 'bad',
+          reason: `${plural(blockedCount, 'task')} stopped and waiting on a decision from you.`,
+        }
+      : awaitingCount
+        ? {
+            label: 'Needs you',
+            tone: 'warn',
+            reason: `${plural(awaitingCount, 'piece', 'pieces')} of finished work waiting for your sign-off.`,
+          }
+        : overdue
+          ? {
+              label: 'Behind',
+              tone: 'warn',
+              reason: `${plural(overdue, 'milestone')} past its due date.`,
+            }
+          : activeCount
+            ? {
+                label: 'Moving',
+                tone: 'ok',
+                reason: `${plural(activeCount, 'task')} under way right now.`,
+              }
+            : openCount
+              ? {
+                  label: 'Idle',
+                  tone: 'info',
+                  reason: `${plural(openCount, 'task')} open, nobody working on any of them.`,
+                }
+              : tasks.length
+                ? {
+                    label: 'All done',
+                    tone: 'violet',
+                    reason: `Everything on this island has been delivered.`,
+                  }
+                : {
+                    label: 'Empty',
+                    tone: 'mute',
+                    reason: 'No tasks yet. Add one to get the island moving.',
+                  };
+
     return {
       project,
       agents,
@@ -208,6 +275,7 @@ export function projectSummaries(world: WorldSnapshot): ProjectSummary[] {
       awaitingCount,
       percent: tasks.length ? Math.round((doneCount / tasks.length) * 100) : 0,
       state,
+      health,
     };
   });
 }

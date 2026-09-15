@@ -503,6 +503,34 @@ export interface ProjectFile {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Usage — what the real runs actually cost
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * What live runs have cost so far.
+ *
+ * Counted from the results real runs left behind, so it only ever describes
+ * work a model actually did — the simulation costs nothing and appears nowhere
+ * in here. A number that quietly mixed the two would be worse than no number.
+ */
+export interface UsageSummary {
+  runs: number;
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadTokens: number;
+  webSearches: number;
+  /** Total time the model spent working, in milliseconds. */
+  durationMs: number;
+  lastRunAt: Timestamp | null;
+}
+
+export interface UsageReport {
+  total: UsageSummary;
+  byAgent: { agentId: Id; name: string; projectId: Id; usage: UsageSummary }[];
+  byProject: { projectId: Id; name: string; usage: UsageSummary }[];
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // World snapshot — one payload the whole UI can render from
 // ─────────────────────────────────────────────────────────────────────────────
 

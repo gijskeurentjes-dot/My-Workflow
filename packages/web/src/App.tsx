@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import { NavLink, Navigate, Route, Routes } from 'react-router-dom';
 import { Activity } from './screens/Activity.js';
 import { Approvals } from './screens/Approvals.js';
@@ -170,23 +170,47 @@ export function App() {
  * check on every field.
  */
 function WorldGate({ children }: { children: ReactNode }) {
-  const { world, connection, error } = useWorldContext();
+  const { world, loadFailed, loadError, retry } = useWorldContext();
+  const [retrying, setRetrying] = useState(false);
 
   if (world) return <>{children}</>;
 
-  if (connection === 'error') {
+  // `loadFailed` rather than the connection state: the event stream retries by
+  // itself for ever, so waiting on it to admit defeat means a person with a
+  // stopped server watches a loading message indefinitely.
+  if (loadFailed) {
     return (
       <div className="page">
-        <div className="banner error" style={{ maxWidth: 560 }}>
-          <span aria-hidden="true">⚠</span>
-          <span>
-            <b>Could not reach the world.</b>
-            <br />
-            {error ?? 'The API did not respond.'}
-            <br />
-            <br />
-            Start the server with <code>npm run dev</code> from the repository root, then reload.
+        <div className="empty" style={{ maxWidth: 520, margin: '40px auto' }}>
+          <span className="em" aria-hidden="true">
+            🔌
           </span>
+          <b>Could not reach the world</b>
+          <p>
+            {loadError ?? 'The API did not respond.'}
+            <br />
+            The interface is fine — it is the server it talks to that is not answering.
+          </p>
+          <div className="acts" style={{ justifyContent: 'center' }}>
+            <button
+              className="btn btn-primary"
+              disabled={retrying}
+              onClick={async () => {
+                setRetrying(true);
+                try {
+                  await retry();
+                } finally {
+                  setRetrying(false);
+                }
+              }}
+            >
+              {retrying ? 'Trying…' : '↻ Try again'}
+            </button>
+          </div>
+          <p className="muted" style={{ marginTop: 14, fontSize: 12 }}>
+            Start it with <code>npm run dev</code> from the repository root. Nothing has been lost —
+            everything lives in the database.
+          </p>
         </div>
       </div>
     );
@@ -195,7 +219,7 @@ function WorldGate({ children }: { children: ReactNode }) {
   return (
     <div className="page" aria-busy="true">
       <div className="empty">
-        <span className="em" aria-hidden="true">
+        <span className="em pulse" aria-hidden="true">
           🏝️
         </span>
         <b>Finding the islands…</b>

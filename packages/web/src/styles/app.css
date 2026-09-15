@@ -1682,3 +1682,131 @@ textarea.input {
 .milestone:first-of-type {
   border-top: 0;
 }
+
+/* ── Final polish ──────────────────────────────────────────────────────────
+   Restrained by design: motion here exists to explain a change, never to
+   decorate one. Everything below is either a state a person needs to notice,
+   or a transition that makes a change legible instead of abrupt. */
+
+/* A project's health, on its own page. */
+.health-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin: 8px 0 0;
+  font-size: 12.5px;
+  color: var(--ink-2);
+}
+
+/* The loading island breathes rather than spins: it is waiting, not working. */
+.empty .em.pulse {
+  animation: breathe 2.4s ease-in-out infinite;
+}
+
+@keyframes breathe {
+  0%,
+  100% {
+    opacity: 0.55;
+    transform: translateY(0);
+  }
+  50% {
+    opacity: 1;
+    transform: translateY(-3px);
+  }
+}
+
+/* Cards lift a little under the pointer, so what is clickable is obvious
+   before it is clicked. Colour alone would not say it. */
+.list-card,
+.isle {
+  transition:
+    transform 140ms ease,
+    box-shadow 140ms ease,
+    border-color 140ms ease;
+}
+
+.isle:hover,
+.list-card:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--sh-2);
+}
+
+.btn,
+.pill,
+.tag {
+  transition:
+    background-color 120ms ease,
+    border-color 120ms ease,
+    color 120ms ease,
+    transform 90ms ease;
+}
+
+.btn:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+/* A disabled control should look unavailable, not broken. */
+.btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+/* Anything the user has to act on gets one quiet marker, and only one. */
+.nav-count.attention {
+  animation: nudge 3.2s ease-in-out infinite;
+}
+
+@keyframes nudge {
+  0%,
+  92%,
+  100% {
+    transform: none;
+  }
+  95% {
+    transform: translateY(-2px);
+  }
+}
+
+/* On a phone the action rows are the thing that overflows: they carry the most
+   buttons and the least room. Let them wrap and fill instead of clipping. */
+@media (max-width: 560px) {
+  .acts {
+    gap: 6px;
+  }
+
+  .acts .btn {
+    flex: 1 1 auto;
+    justify-content: center;
+    min-width: 0;
+  }
+
+  .approval .acts .btn {
+    flex: 1 1 100%;
+  }
+
+  .grid-asks {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .empty .em.pulse,
+  .nav-count.attention {
+    animation: none;
+  }
+
+  .isle:hover,
+  .list-card:hover {
+    transform: none;
+  }
+}
+
+/* The health reason sits under the description: what the project is, then how
+   it is doing. Coloured to match its pill, so the two read as one statement. */
+.isle-health {
+  font-size: 11.5px;
+  font-weight: 600;
+  margin-top: 4px;
+  line-height: 1.4;
+}

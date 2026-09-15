@@ -3,6 +3,7 @@ import { Link, useNavigate, useParams } from 'react-router-dom';
 import { MOVEMENT_LABEL, PLOTS, STATUS_LABEL } from '@ai-islands/shared';
 import { api } from '../api/client.js';
 import { AgentBrief } from '../components/AgentBrief.js';
+import { AgentUsage } from '../components/AgentUsage.js';
 import { ApprovalCard } from '../components/ApprovalCard.js';
 import { AgentCharter, AgentTypicalWork, dealDefinitionFor } from '../components/DealRoom.js';
 import { TaskCard } from '../components/TaskCard.js';
@@ -55,6 +56,12 @@ export function AgentDetail() {
   // What this agent is waiting on you for, right here beside it.
   const waitingOn = world.approvals.filter(
     (a) => a.agentId === agent.id && a.status === 'pending',
+  );
+  const milestone = world.milestones.find((m) => m.id === display.task?.milestoneId);
+  const blocked = agent.status === 'failed' || Boolean(display.task?.blocker);
+  // What this agent has produced: deliverables recorded against its tasks.
+  const produced = world.files.filter((file) =>
+    world.tasks.some((t) => t.id === file.taskId && t.assignedAgentId === agent.id),
   );
   const activity = world.activity.filter((e) => e.agentId === agent.id);
   const history = world.tasks.filter((t) => t.assignedAgentId === agent.id);
@@ -151,8 +158,59 @@ export function AgentDetail() {
             </div>
             <div className="kv">
               <span>Current task</span>
-              <b>{task ? task.title : 'None'}</b>
+              <b>
+                {task ? (
+                  <Link to={`/tasks?task=${task.id}`} style={{ color: 'inherit' }}>
+                    {task.title}
+                  </Link>
+                ) : (
+                  'None'
+                )}
+              </b>
             </div>
+            {/* Why it is doing it: the task's own description, then the goal it
+                counts towards. Without this the page says what is happening and
+                never why, which is the question people actually arrive with. */}
+            {task && (
+              <div className="kv">
+                <span>Why</span>
+                {task.description ? (
+                  <b style={{ fontWeight: 500 }}>{task.description}</b>
+                ) : (
+                  // Shown even when empty: "no reason was written" is itself
+                  // worth knowing, and it is the nudge to write one.
+                  <b className="muted" style={{ fontWeight: 500 }}>
+                    Nobody wrote a description for this task.
+                  </b>
+                )}
+              </div>
+            )}
+            {milestone && (
+              <div className="kv">
+                <span>Towards</span>
+                <b>🎯 {milestone.title}</b>
+              </div>
+            )}
+            <div className="kv">
+              <span>Tools it may use</span>
+              <b style={{ fontWeight: 500 }}>{agent.tools.join(', ') || 'None'}</b>
+            </div>
+            {blocked && (
+              <div className="kv">
+                <span>Blocked</span>
+                <b className="tone-text-bad">{task?.blocker ?? 'Waiting on something'}</b>
+              </div>
+            )}
+            {waitingOn.length > 0 && (
+              <div className="kv">
+                <span>Needs from you</span>
+                <b className="tone-text-warn">
+                  {waitingOn.length === 1
+                    ? waitingOn[0]!.action
+                    : `${waitingOn.length} decisions`}
+                </b>
+              </div>
+            )}
             {task && task.status !== 'completed' && (
               <div style={{ marginTop: 10 }}>
                 <ProgressBar
@@ -208,6 +266,8 @@ export function AgentDetail() {
               <TaskCard key={t.id} world={world} task={t} now={now} compact />
             ))}
           </div>
+
+          <AgentUsage agentId={agent.id} produced={produced} now={now} />
 
           {charter && <AgentTypicalWork definition={charter} />}
 

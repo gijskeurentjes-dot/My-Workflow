@@ -1,10 +1,12 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import { api } from '../api/client.js';
 import {
   ARCHETYPES,
   ARCHETYPE_LIST,
   PLOTS,
   STREAM_PATH,
   type AgentArchetype,
+  type UsageReport,
 } from '@ai-islands/shared';
 import { Avatar } from '../components/ui.js';
 import { useTheme } from '../useTheme.js';
@@ -130,6 +132,8 @@ export function Settings() {
               <span>Searches per run</span>
               <b className="mono">{world.runtime.maxSearches}</b>
             </div>
+            <UsagePanel />
+
             {!world.runtime.credentialsConfigured && (
               <p className="muted" style={{ marginTop: 12 }}>
                 Set <span className="mono">ANTHROPIC_API_KEY</span> in{' '}
@@ -233,5 +237,69 @@ export function Settings() {
         </div>
       </div>
     </div>
+  );
+}
+
+/**
+ * What live runs have actually cost.
+ *
+ * Only real runs are counted — the simulation costs nothing and appears
+ * nowhere here. Before anything has run for real the panel says so plainly
+ * rather than showing a row of confident zeroes, because a zero reads as a
+ * measurement and "nothing has happened yet" is not one.
+ */
+function UsagePanel() {
+  const [usage, setUsage] = useState<UsageReport | null>(null);
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    api
+      .usage()
+      .then(setUsage)
+      .catch(() => setFailed(true));
+  }, []);
+
+  if (failed) return null;
+
+  const total = usage?.total;
+
+  return (
+    <>
+      <div className="kv" style={{ marginTop: 14 }}>
+        <span>Live runs so far</span>
+        <b>{total ? total.runs : '—'}</b>
+      </div>
+      {total && total.runs > 0 && (
+        <>
+          <div className="kv">
+            <span>Tokens used</span>
+            <b className="mono">
+              {total.inputTokens.toLocaleString()} in / {total.outputTokens.toLocaleString()} out
+            </b>
+          </div>
+          <div className="kv">
+            <span>Web searches</span>
+            <b className="mono">{total.webSearches}</b>
+          </div>
+          <div className="kv">
+            <span>Model time</span>
+            <b className="mono">{(total.durationMs / 1000).toFixed(1)}s</b>
+          </div>
+          {usage && usage.byProject.length > 0 && (
+            <p className="muted" style={{ marginTop: 10, fontSize: 11.5 }}>
+              Most of it on{' '}
+              <b>{usage.byProject[0]!.name}</b>
+              {usage.byProject.length > 1 ? ` and ${usage.byProject.length - 1} other` : ''}
+              {usage.byProject.length > 2 ? 's' : ''}.
+            </p>
+          )}
+        </>
+      )}
+      {total && total.runs === 0 && (
+        <p className="muted" style={{ marginTop: 6, fontSize: 11.5 }}>
+          Nothing has run for real yet, so there is nothing to count. The simulation costs nothing.
+        </p>
+      )}
+    </>
   );
 }

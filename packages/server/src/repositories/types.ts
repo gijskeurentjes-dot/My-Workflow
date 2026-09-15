@@ -15,6 +15,7 @@ import type {
   ProjectStatus,
   RunMode,
   Task,
+  UsageSummary,
   TaskPriority,
   TaskResult,
   TaskStatus,
@@ -176,6 +177,10 @@ export interface ActivityFilter {
 /** What agents produced. Append-only: a rerun adds a result, never replaces one. */
 export interface TaskResultRepository {
   create(result: TaskResult): TaskResult;
+  /** What every live run has cost, all together. */
+  totalUsage(): UsageSummary;
+  usageByAgent(): { agentId: Id; usage: UsageSummary }[];
+  usageByTask(): { taskId: Id; usage: UsageSummary }[];
   /** Newest first, so the latest attempt reads as the current answer. */
   listByTask(taskId: Id): TaskResult[];
   findLatestByTask(taskId: Id): TaskResult | null;

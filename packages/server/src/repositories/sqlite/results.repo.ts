@@ -1,4 +1,4 @@
-import type { Id, ResearchReport, TaskResult } from '@ai-islands/shared';
+import type { Id, ResearchReport, TaskResult, UsageSummary } from '@ai-islands/shared';
 import type { Db } from '../../db/sqlite.js';
 import type { TaskResultRepository } from '../types.js';
 
@@ -18,6 +18,16 @@ interface ResultRow {
   web_searches: number;
   duration_ms: number;
   created_at: number;
+}
+
+interface UsageRow {
+  runs: number;
+  input_tokens: number;
+  output_tokens: number;
+  cache_read_tokens: number;
+  web_searches: number;
+  duration_ms: number;
+  last_run_at: number | null;
 }
 
 /** A stored report that will not parse must not break reading the rest. */
@@ -66,6 +76,37 @@ export function createTaskResultRepository(db: Db): TaskResultRepository {
     'SELECT * FROM task_results WHERE task_id = ? ORDER BY created_at DESC, rowid DESC LIMIT 1',
   );
 
+  /**
+   * Everything a set of runs cost, counted in SQL.
+   *
+   * Grouped in the database rather than in JavaScript because the alternative
+   * is loading every report ever written — including the reports themselves —
+   * to add up five integers.
+   */
+  const usageFor = (groupBy: 'agent_id' | 'task_id' | null) =>
+    db.prepare(`
+      SELECT ${groupBy ? `${groupBy} AS key,` : ''}
+             COUNT(*)                        AS runs,
+             COALESCE(SUM(input_tokens), 0)      AS input_tokens,
+             COALESCE(SUM(output_tokens), 0)     AS output_tokens,
+             COALESCE(SUM(cache_read_tokens), 0) AS cache_read_tokens,
+             COALESCE(SUM(web_searches), 0)      AS web_searches,
+             COALESCE(SUM(duration_ms), 0)       AS duration_ms,
+             MAX(created_at)                 AS last_run_at
+      FROM task_results
+      ${groupBy ? `GROUP BY ${groupBy}` : ''}
+    `);
+
+  const toUsage = (r: UsageRow): UsageSummary => ({
+    runs: r.runs,
+    inputTokens: r.input_tokens,
+    outputTokens: r.output_tokens,
+    cacheReadTokens: r.cache_read_tokens,
+    webSearches: r.web_searches,
+    durationMs: r.duration_ms,
+    lastRunAt: r.last_run_at,
+  });
+
   return {
     create: (result: TaskResult) => {
       insert.run({
@@ -91,6 +132,20 @@ export function createTaskResultRepository(db: Db): TaskResultRepository {
     },
 
     listByTask: (taskId: Id) => (byTask.all(taskId) as ResultRow[]).map(toResult),
+
+    totalUsage: () => toUsage(usageFor(null).get() as UsageRow),
+
+    usageByAgent: () =>
+      (usageFor('agent_id').all() as (UsageRow & { key: string })[]).map((row) => ({
+        agentId: row.key,
+        usage: toUsage(row),
+      })),
+
+    usageByTask: () =>
+      (usageFor('task_id').all() as (UsageRow & { key: string })[]).map((row) => ({
+        taskId: row.key,
+        usage: toUsage(row),
+      })),
 
     findLatestByTask: (taskId: Id) => {
       const row = latest.get(taskId) as ResultRow | undefined;

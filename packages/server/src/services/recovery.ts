@@ -1,6 +1,7 @@
 import type { Repositories } from '../repositories/types.js';
 import { ChangeSet, type EngineChanges } from './agents/agent-engine.js';
 import { newId } from '../ids.js';
+import { STATES_NEEDING_A_TASK, agentStatusForTask } from './agent-state.js';
 
 /**
  * Tidy up runs that did not survive the process.
@@ -55,6 +56,58 @@ export function recoverInterruptedRuns(repos: Repositories): EngineChanges {
       changes.activity(event);
     }
     changes.approvalsDirty();
+  });
+
+  return changes.build();
+}
+
+/**
+ * Make every agent's status agree with the work it is holding.
+ *
+ * An agent's state describes its task, so the two can only disagree if
+ * something went wrong — an older build that moved an agent without
+ * re-deriving it, a process killed mid-write. Whatever the cause, the result is
+ * an island saying an agent is waiting on a decision that does not exist, which
+ * is worse than saying nothing.
+ *
+ * Deliberately narrow: it corrects contradictions and nothing else. An agent
+ * celebrating a delivery, or idle with nothing to do, is left exactly as it is.
+ */
+export function reconcileAgentStates(repos: Repositories): EngineChanges {
+  const changes = new ChangeSet();
+  const now = Date.now();
+
+  repos.transaction(() => {
+    for (const agent of repos.agents.list()) {
+      const task = agent.currentTaskId ? repos.tasks.findById(agent.currentTaskId) : null;
+
+      if (!task) {
+        // Holding nothing. Only the states that require a task are wrong here.
+        if (agent.currentTaskId !== null || STATES_NEEDING_A_TASK.includes(agent.status)) {
+          if (!STATES_NEEDING_A_TASK.includes(agent.status) && agent.currentTaskId === null) continue;
+          changes.agent(
+            repos.agents.update(agent.id, {
+              status: 'idle',
+              currentTaskId: null,
+              progress: 0,
+              updatedAt: now,
+            }),
+          );
+        }
+        continue;
+      }
+
+      const expected = agentStatusForTask(task.status);
+      if (agent.status === expected) continue;
+
+      changes.agent(
+        repos.agents.update(agent.id, {
+          status: expected,
+          progress: task.progress,
+          updatedAt: now,
+        }),
+      );
+    }
   });
 
   return changes.build();

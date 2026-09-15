@@ -5,7 +5,7 @@ import { createSqliteRepositories } from './repositories/sqlite/index.js';
 import type { Repositories } from './repositories/types.js';
 import { Broadcaster } from './realtime/broadcaster.js';
 import { DomainEventDeriver } from './realtime/domain-events.js';
-import { recoverInterruptedRuns } from './services/recovery.js';
+import { reconcileAgentStates, recoverInterruptedRuns } from './services/recovery.js';
 import type { AgentEngine, EngineChanges } from './services/agents/agent-engine.js';
 import { MockAgentEngine } from './services/agents/mock-agent-engine.js';
 import { WorldService } from './services/world.service.js';
@@ -169,6 +169,11 @@ export function createContext(options: CreateContextOptions = {}): AppContext {
   // gone, so it is withdrawn and its task is marked failed — nothing was done
   // without approval, and Retry runs it again.
   recoverInterruptedRuns(repos);
+
+  // And make sure every agent's status still describes the work it is holding.
+  // A world that says an agent is waiting on a decision that does not exist is
+  // worse than one that says nothing.
+  reconcileAgentStates(repos);
 
   if (options.autoStart !== false) {
     engine.start();

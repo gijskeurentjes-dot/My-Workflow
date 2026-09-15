@@ -37,6 +37,24 @@ interface State {
   connection: ConnectionState;
   error: string | null;
   /**
+   * True once loading the world has actually failed.
+   *
+   * Separate from `connection` because the two answer different questions and
+   * kept disagreeing: the event stream retries forever, so it sits at
+   * "reconnecting" indefinitely while the app has nothing to show — which read
+   * to a person as "still loading", for ever. This says plainly that the first
+   * load did not work, so the screen can say so and offer to try again.
+   */
+  loadFailed: boolean;
+  /**
+   * Why the first load failed, kept apart from `error`.
+   *
+   * The stream writes its own message into `error` every few seconds while it
+   * retries, which would otherwise overwrite the one explaining why there is
+   * nothing on screen at all.
+   */
+  loadError: string | null;
+  /**
    * Server clock minus client clock, in ms. Added to `Date.now()` before
    * interpolating a walk, so an out-of-sync laptop does not teleport bots.
    */
@@ -46,7 +64,9 @@ interface State {
 type Action =
   | { type: 'snapshot'; world: WorldSnapshot }
   | { type: 'event'; event: ServerEvent }
-  | { type: 'connection'; connection: ConnectionState; error?: string };
+  | { type: 'connection'; connection: ConnectionState; error?: string }
+  | { type: 'load-failed'; error: string }
+  | { type: 'retrying' };
 
 const ACTIVITY_CAP = 200;
 
@@ -70,11 +90,19 @@ function reduce(state: State, action: Action): State {
         world: action.world,
         connection: 'live',
         error: null,
+        loadFailed: false,
+        loadError: null,
         clockSkew: action.world.serverTime - Date.now(),
       };
 
     case 'connection':
       return { ...state, connection: action.connection, error: action.error ?? null };
+
+    case 'load-failed':
+      return { ...state, loadFailed: true, loadError: action.error };
+
+    case 'retrying':
+      return { ...state, loadFailed: false, loadError: null, connection: 'connecting' };
 
     case 'event': {
       const { event } = action;
@@ -149,6 +177,8 @@ interface WorldContextValue extends State {
   serverNow(): number;
   resetDemoData(): Promise<void>;
   resetting: boolean;
+  /** Try loading the world again, after a failure. */
+  retry(): Promise<void>;
   /** Subscribe to named events. Returns the unsubscribe function. */
   subscribe(handler: DomainEventHandler): () => void;
 }
@@ -160,6 +190,8 @@ export function WorldProvider({ children }: { children: ReactNode }) {
     world: null,
     connection: 'connecting',
     error: null,
+    loadFailed: false,
+    loadError: null,
     clockSkew: 0,
   });
   const [resetting, setResetting] = useState(false);
@@ -222,24 +254,35 @@ export function WorldProvider({ children }: { children: ReactNode }) {
     };
   }, []);
 
-  // If the stream never delivers a snapshot — an old proxy buffering it, say —
-  // fall back to a plain fetch so the app still renders.
+  /**
+   * Load the world directly.
+   *
+   * The stream normally delivers the first snapshot, but an old proxy can
+   * buffer it, so this runs as a fallback — and it is also what the Retry
+   * button calls, so "try again" is a real attempt rather than a page reload
+   * and a hope.
+   */
+  const load = useCallback(async () => {
+    try {
+      dispatch({ type: 'snapshot', world: await api.world() });
+    } catch (err: unknown) {
+      dispatch({
+        type: 'load-failed',
+        error: err instanceof Error ? err.message : 'Could not reach the API',
+      });
+    }
+  }, []);
+
+  const retry = useCallback(async () => {
+    dispatch({ type: 'retrying' });
+    await load();
+  }, [load]);
+
   useEffect(() => {
     if (state.world) return;
-    const timer = setTimeout(() => {
-      api
-        .world()
-        .then((world) => dispatch({ type: 'snapshot', world }))
-        .catch((err: unknown) =>
-          dispatch({
-            type: 'connection',
-            connection: 'error',
-            error: err instanceof Error ? err.message : 'Could not reach the API',
-          }),
-        );
-    }, 2500);
+    const timer = setTimeout(() => void load(), 2500);
     return () => clearTimeout(timer);
-  }, [state.world]);
+  }, [state.world, load]);
 
   const serverNow = useCallback(() => Date.now() + skewRef.current, []);
 
@@ -254,8 +297,8 @@ export function WorldProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const value = useMemo<WorldContextValue>(
-    () => ({ ...state, serverNow, resetDemoData, resetting, subscribe }),
-    [state, serverNow, resetDemoData, resetting, subscribe],
+    () => ({ ...state, serverNow, resetDemoData, resetting, subscribe, retry }),
+    [state, serverNow, resetDemoData, resetting, subscribe, retry],
   );
 
   return <WorldContext.Provider value={value}>{children}</WorldContext.Provider>;

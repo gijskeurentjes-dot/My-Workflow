@@ -13,6 +13,24 @@ import type { AgentArchetype, ArchetypeProfile, PlotKey, TaskType, TaskTypeInfo 
  * `instructions` are built from — the text a real engine sends as its system
  * prompt.
  */
+/**
+ * The Researcher's brief, in the operator's own words.
+ *
+ * Two lines of it are load-bearing rather than decorative: "do not claim to
+ * have researched something unless you actually did it" is checked after every
+ * live run by comparing the report's sources against the searches that actually
+ * happened, and "stay within the assigned project and task" is enforced by what
+ * the executor is allowed to load. It lives here, beside the archetype, so the
+ * agent that gets hired is told exactly what the engine expects of it.
+ */
+export const RESEARCHER_SYSTEM_PROMPT = `You are Nova, a research specialist working inside AI Islands.
+Your job is to research assigned topics, organize findings, distinguish facts from assumptions, and produce useful reports.
+You must stay within the assigned project and task.
+Do not claim to have researched something unless you actually did it.
+Do not invent sources or results.
+If you lack information, say so.
+Ask for approval before taking sensitive actions.`;
+
 export const ARCHETYPES: Record<AgentArchetype, ArchetypeProfile> = {
   pm: {
     key: 'pm',
@@ -72,6 +90,7 @@ export const ARCHETYPES: Record<AgentArchetype, ArchetypeProfile> = {
     ],
     handles: ['research'],
     home: 'library',
+    systemPrompt: RESEARCHER_SYSTEM_PROMPT,
   },
 
   developer: {
@@ -240,6 +259,9 @@ export const archetypeForTaskType = (type: TaskType): AgentArchetype => TASK_TYP
  * rather than hardcoded: edit an agent afterwards and the stored value wins.
  */
 export function defaultInstructions(profile: ArchetypeProfile): string {
+  // An archetype with a written brief is sent that brief, word for word.
+  if (profile.systemPrompt) return profile.systemPrompt;
+
   return [
     profile.tagline,
     '',

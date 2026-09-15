@@ -2,11 +2,15 @@ import {
   ARCHETYPES,
   ARCHETYPE_KEYS,
   APPROVAL_PLOT,
+  DEAL_AGENT_LIST,
+  DEAL_ROOM_TEMPLATE,
   DELIVERY_PLOT,
   PLOTS,
+  PROJECT_TEMPLATES,
   TASK_TYPES,
   appearanceForIndex,
   archetypeForTaskType,
+  dealAgentInstructions,
   defaultInstructions,
   homePlotFor,
   isTerminalTaskStatus,
@@ -14,8 +18,10 @@ import {
   type ActivityEventType,
   type Agent,
   type AgentArchetype,
+  type DealAgentDefinition,
   type Id,
   type Project,
+  type ProjectTemplate,
   type Task,
   type TaskPriority,
   type TaskType,
@@ -51,13 +57,29 @@ export class WorkflowService {
    * default. Pass an explicit `team` to start with a different shape.
    */
   createProject(input: {
-    name: string;
+    name?: string;
     description?: string;
     color?: string;
     team?: AgentArchetype[];
+    /** Which kind of project. A deal room brings its own fixed team. */
+    template?: ProjectTemplate;
   }): { project: Project; changes: EngineChanges } {
-    const name = input.name?.trim();
+    const template: ProjectTemplate = input.template ?? 'standard';
+    if (!PROJECT_TEMPLATES.includes(template)) {
+      throw invalid(`Unknown kind of project: ${template}`);
+    }
+
+    const dealRoom = template === 'deal_room';
+    const name = input.name?.trim() || (dealRoom ? DEAL_ROOM_TEMPLATE.defaultName : '');
     if (!name) throw invalid('A project needs a name.');
+
+    // A deal room's team is the registry, not a choice. Silently ignoring a
+    // team someone asked for would be worse than saying why it cannot apply.
+    if (dealRoom && input.team && input.team.length > 0) {
+      throw invalid(
+        'A deal room always has the same five agents — Atlas, Nova, Forge, Ledger and Canvas — so its team cannot be chosen.',
+      );
+    }
 
     const team = input.team ?? ['pm'];
     for (const archetype of team) {
@@ -69,9 +91,12 @@ export class WorkflowService {
       const project = this.repos.projects.create({
         id: newId('prj'),
         name,
-        description: input.description?.trim() ?? '',
+        description:
+          input.description?.trim() ||
+          (dealRoom ? DEAL_ROOM_TEMPLATE.defaultDescription : ''),
         status: 'active',
-        color: input.color ?? '#4a8ff0',
+        template,
+        color: input.color ?? (dealRoom ? DEAL_ROOM_TEMPLATE.color : '#4a8ff0'),
         // Derived from how many projects exist, so consecutive islands look
         // different and the same nth project always draws the same shape.
         appearance: appearanceForIndex(this.repos.projects.count()),
@@ -87,8 +112,16 @@ export class WorkflowService {
         at: now,
       });
 
-      for (const archetype of team) {
-        this.hireInternal(project, archetype, undefined, changes, now);
+      if (dealRoom) {
+        // The five, in registry order, each with the brief and the tool list
+        // its definition carries. Nobody else can ever join.
+        for (const definition of DEAL_AGENT_LIST) {
+          this.hireInternal(project, definition.archetype, definition.name, changes, now, definition);
+        }
+      } else {
+        for (const archetype of team) {
+          this.hireInternal(project, archetype, undefined, changes, now);
+        }
       }
 
       return { project, changes: changes.build() };
@@ -157,6 +190,15 @@ export class WorkflowService {
   ): { agent: Agent; changes: EngineChanges } {
     const project = this.repos.projects.findById(projectId);
     if (!project) throw notFound('Project');
+    // The registry is the whole point of a deal room: five named specialists,
+    // fixed, so that who did what is never in question. Refused here rather
+    // than in a prompt, because a rule an agent could talk its way past is not
+    // a rule.
+    if (project.template === 'deal_room') {
+      throw refuse(
+        `${project.name} has a fixed team of five — Atlas, Nova, Forge, Ledger and Canvas. No one else can be hired onto it.`,
+      );
+    }
     if (!ARCHETYPES[archetype]) {
       throw invalid(`Unknown kind of agent: ${archetype}. Expected one of ${ARCHETYPE_KEYS.join(', ')}.`);
     }
@@ -172,6 +214,13 @@ export class WorkflowService {
   dismissAgent(id: Id): EngineChanges {
     const agent = this.repos.agents.findById(id);
     if (!agent) throw notFound('Agent');
+
+    const project = this.repos.projects.findById(agent.projectId);
+    if (project?.template === 'deal_room') {
+      throw refuse(
+        `${agent.name} is part of the fixed deal-room team on ${project.name} and cannot be dismissed.`,
+      );
+    }
 
     return this.repos.transaction(() => {
       const changes = new ChangeSet();
@@ -629,6 +678,8 @@ export class WorkflowService {
     name: string | undefined,
     changes: ChangeSet,
     now: number,
+    /** A deal-room definition, when this agent comes from the registry. */
+    definition?: DealAgentDefinition,
   ): Agent {
     const profile = ARCHETYPES[archetype];
     const trimmed = name?.trim();
@@ -638,11 +689,13 @@ export class WorkflowService {
       projectId: project.id,
       archetype,
       name: trimmed || profile.defaultName,
-      role: profile.title,
+      role: definition ? definition.role : profile.title,
       // The brief a real engine would send as this agent's system prompt.
-      // Assembled from the archetype, then editable per agent.
-      instructions: defaultInstructions(profile),
-      tools: [...profile.tools],
+      // A deal-room agent's is built from its registry entry — its
+      // permissions, its restrictions and the rules everyone there works
+      // under. Everyone else starts from their archetype. Editable after.
+      instructions: definition ? dealAgentInstructions(definition) : defaultInstructions(profile),
+      tools: definition ? [...definition.tools] : [...profile.tools],
       // Execution limits travel with the agent, so a run has a ceiling
       // even if nobody thought about it when the agent was hired.
       model: DEFAULT_AGENT_MODEL,

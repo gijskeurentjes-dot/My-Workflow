@@ -461,4 +461,14 @@ export const MIGRATIONS: Migration[] = [
       ALTER TABLE tasks ADD COLUMN run_mode TEXT NOT NULL DEFAULT 'simulated';
     `,
   },
+  {
+    id: 6,
+    name: 'project_template',
+    sql: /* sql */ `
+      -- What kind of project this is. 'standard' is everything that existed
+      -- before; 'deal_room' has the fixed five-agent M&A team, which the
+      -- server refuses to add to or dismiss from. Set once, at creation.
+      ALTER TABLE projects ADD COLUMN template TEXT NOT NULL DEFAULT 'standard';
+    `,
+  },
 ];

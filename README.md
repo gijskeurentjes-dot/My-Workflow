@@ -182,6 +182,25 @@ Setup, the event contract, limits, and what an agent may not do:
 
 ---
 
+## The M&A Deal Room
+
+A **deal room** is a project with a fixed team of five named specialists —
+**Atlas** (project manager), **Nova** (researcher), **Forge** (developer),
+**Ledger** (financial modelling) and **Canvas** (presentations) — each working
+under explicit permissions, hard restrictions and approval gates that are shown
+on its own page.
+
+Create one from **Projects → New project → M&A Deal Room**. It gets its own
+island, board, approvals and history like any other project; what is different
+is that the team cannot change. Nobody else can be hired onto it, none of the
+five can be dismissed, and no agent can create an agent — there is no such code
+path, in this or any other project.
+
+Full detail, including what is enforced in code versus stated in a brief, and
+what the later phases add: **[docs/DEAL-ROOM.md](docs/DEAL-ROOM.md)**.
+
+---
+
 ## Replacing the rest of the mock agents
 
 `MockAgentEngine` implements the `AgentEngine` interface in

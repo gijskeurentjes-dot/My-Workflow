@@ -10,10 +10,10 @@ export function createProjectRepository(db: Db): ProjectRepository {
   );
   const selectById = db.prepare('SELECT * FROM projects WHERE id = ?');
   const insert = db.prepare(`
-    INSERT INTO projects (id, name, goal, description, status, color,
+    INSERT INTO projects (id, name, goal, description, status, template, color,
                           biome, seed, layout_col, layout_row, crates,
                           created_at, updated_at)
-    VALUES (@id, @name, @description, @description, @status, @color,
+    VALUES (@id, @name, @description, @description, @status, @template, @color,
             @biome, @seed, @layout_col, @layout_row, @crates,
             @created_at, @updated_at)
   `);
@@ -44,6 +44,8 @@ export function createProjectRepository(db: Db): ProjectRepository {
         // step with description rather than left empty.
         description: project.description,
         status: project.status,
+        // Fixed at creation: there is no patch for it, on purpose.
+        template: project.template,
         color: project.color,
         biome: project.appearance.biome,
         seed: project.appearance.seed,

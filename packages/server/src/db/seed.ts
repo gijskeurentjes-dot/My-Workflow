@@ -239,6 +239,7 @@ export function seedWorld(repos: Repositories, now: number = Date.now()): SeedRe
         name: definition.name,
         description: definition.description,
         status: 'active',
+        template: 'standard',
         color: definition.color,
         appearance: appearanceForIndex(index),
         crates: 0,

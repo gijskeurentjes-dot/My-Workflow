@@ -27,7 +27,12 @@ export interface AgentDisplay {
   task: Task | null;
   movement: MovementState;
   doing: string;
-  /** Where to draw it, in island grid coordinates. */
+  /**
+   * Where to draw it, in island grid coordinates.
+   *
+   * Nudged by `spreadOverlaps` when several agents share a spot, so a group
+   * standing together reads as a group rather than as one agent.
+   */
   position: { c: number; r: number };
   /** Which way it is facing: 1 right, -1 left. */
   facing: 1 | -1;
@@ -89,15 +94,63 @@ export function toAgentDisplay(
   };
 }
 
+/**
+ * Nudge agents apart when they are standing on the same spot.
+ *
+ * Several idle agents gather at the same place, and drawn at the same
+ * coordinates they become one sprite with the rest hidden underneath — a team
+ * of five would look like a team of one. They are spread around a small ring
+ * instead, deterministically by id so nobody jitters between frames.
+ *
+ * This is presentation only: the agent is still *at* that place, and its row
+ * is untouched.
+ */
+function spreadOverlaps(displays: AgentDisplay[]): AgentDisplay[] {
+  const groups = new Map<string, AgentDisplay[]>();
+  for (const d of displays) {
+    // An agent mid-walk is already somewhere of its own.
+    if (d.agent.movement) continue;
+    const key = `${d.position.c.toFixed(2)}:${d.position.r.toFixed(2)}`;
+    const group = groups.get(key);
+    if (group) group.push(d);
+    else groups.set(key, [d]);
+  }
+
+  for (const group of groups.values()) {
+    if (group.length < 2) continue;
+    const ordered = [...group].sort((a, b) => a.agent.id.localeCompare(b.agent.id));
+    const half = (ordered.length - 1) / 2;
+
+    ordered.forEach((d, i) => {
+      // Isometric screen-x follows (c - r) and depth follows (c + r), so moving
+      // +lateral on one axis and -lateral on the other slides an agent sideways
+      // without changing how far away it looks. That is what keeps a row of
+      // nameplates side by side instead of stacked on top of each other.
+      const lateral = (i - half) * 0.85;
+      // A small alternating depth offset so neighbouring plates are not exactly
+      // level, which reads as a group standing about rather than a rank.
+      const depth = (i % 2 === 0 ? -1 : 1) * 0.2;
+      d.position = {
+        c: d.position.c + lateral + depth,
+        r: d.position.r - lateral + depth,
+      };
+    });
+  }
+
+  return displays;
+}
+
 export function agentsForProject(
   world: WorldSnapshot,
   projectId: string,
   now: number,
 ): AgentDisplay[] {
-  return world.agents
-    .filter((a) => a.projectId === projectId)
-    .map((a) => toAgentDisplay(world, a, now))
-    .filter((d): d is AgentDisplay => d !== null);
+  return spreadOverlaps(
+    world.agents
+      .filter((a) => a.projectId === projectId)
+      .map((a) => toAgentDisplay(world, a, now))
+      .filter((d): d is AgentDisplay => d !== null),
+  );
 }
 
 export function allAgentDisplays(world: WorldSnapshot, now: number): AgentDisplay[] {

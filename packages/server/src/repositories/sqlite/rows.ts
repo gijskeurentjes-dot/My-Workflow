@@ -23,6 +23,7 @@ export interface ProjectRow {
   name: string;
   description: string;
   status: string;
+  template: string;
   color: string;
   biome: string;
   seed: number;
@@ -38,6 +39,9 @@ export const toProject = (r: ProjectRow): Project => ({
   name: r.name,
   description: r.description,
   status: r.status as Project['status'],
+  // An unrecognised template reads as standard: a row written by a newer build
+  // must not make an older one refuse to render the world.
+  template: r.template === 'deal_room' ? 'deal_room' : 'standard',
   color: r.color,
   appearance: {
     biome: r.biome as BiomeKey,

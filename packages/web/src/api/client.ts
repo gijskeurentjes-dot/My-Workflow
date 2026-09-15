@@ -5,6 +5,7 @@ import {
   type ApprovalRequest,
   type Id,
   type Project,
+  type ProjectTemplate,
   type RuntimeInfo,
   type Task,
   type TaskPriority,
@@ -55,11 +56,14 @@ const patch = <T>(path: string, body: unknown) =>
 const del = <T>(path: string) => request<T>(path, { method: 'DELETE' });
 
 export interface CreateProjectInput {
-  name: string;
+  /** Optional for a deal room, which names itself. */
+  name?: string;
   description?: string;
   color?: string;
   /** Who to hire onto the new project. Defaults to a project manager. */
   team?: AgentArchetype[];
+  /** Which kind of project. A deal room brings its own fixed team of five. */
+  template?: ProjectTemplate;
 }
 
 export interface CreateTaskInput {

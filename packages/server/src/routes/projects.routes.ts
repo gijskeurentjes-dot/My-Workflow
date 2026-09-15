@@ -1,6 +1,11 @@
 import { Router } from 'express';
 import { z } from 'zod';
-import { ARCHETYPE_KEYS, type AgentArchetype } from '@ai-islands/shared';
+import {
+  ARCHETYPE_KEYS,
+  PROJECT_TEMPLATES,
+  type AgentArchetype,
+  type ProjectTemplate,
+} from '@ai-islands/shared';
 import type { AppContext } from '../context.js';
 import { command, parseBody } from './helpers.js';
 
@@ -9,8 +14,13 @@ const listQuery = z.object({
 });
 
 const createBody = z.object({
-  name: z.string().min(1, 'A project needs a name').max(120),
+  // A deal room can be created without a name: the template supplies one.
+  name: z.string().max(120).optional(),
   description: z.string().max(600).optional(),
+  /** Which kind of project. A deal room brings its own fixed team of five. */
+  template: z
+    .enum(PROJECT_TEMPLATES as unknown as [ProjectTemplate, ...ProjectTemplate[]])
+    .optional(),
   /** Who to hire onto the new project. Defaults to a project manager. */
   team: z.array(z.enum(ARCHETYPE_KEYS as [AgentArchetype, ...AgentArchetype[]])).max(8).optional(),
   color: z

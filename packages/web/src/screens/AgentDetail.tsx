@@ -3,6 +3,7 @@ import { Link, useNavigate, useParams } from 'react-router-dom';
 import { MOVEMENT_LABEL, PLOTS, STATUS_LABEL } from '@ai-islands/shared';
 import { api } from '../api/client.js';
 import { AgentBrief } from '../components/AgentBrief.js';
+import { AgentCharter, AgentTypicalWork, dealDefinitionFor } from '../components/DealRoom.js';
 import { TaskCard } from '../components/TaskCard.js';
 import {
   ActivityFeed,
@@ -47,6 +48,9 @@ export function AgentDetail() {
   }
 
   const { profile, task, project } = display;
+  // A deal-room agent's permissions are part of who it is, so they are shown
+  // here rather than buried in the brief text.
+  const charter = dealDefinitionFor(agent, project);
   const activity = world.activity.filter((e) => e.agentId === agent.id);
   const history = world.tasks.filter((t) => t.assignedAgentId === agent.id);
 
@@ -76,10 +80,15 @@ export function AgentDetail() {
           </div>
           <StatusPill status={agent.status} />
         </div>
-        <p>{profile.tagline}</p>
+        <p>{charter ? charter.description : profile.tagline}</p>
 
         <div className="head-actions">
-          {confirmingDismiss ? (
+          {charter ? (
+            <span className="muted" style={{ fontSize: 12.5 }}>
+              {agent.name} is one of the five fixed agents in this deal room and cannot be
+              dismissed.
+            </span>
+          ) : confirmingDismiss ? (
             <>
               <button
                 className="btn btn-bad"
@@ -146,7 +155,9 @@ export function AgentDetail() {
                   tone={
                     agent.status === 'failed' ? 'bad' : agent.status === 'paused' ? 'info' : 'ok'
                   }
-                  note="simulated progress"
+                  note={
+                    task.runMode === 'live' ? 'live run — milestones reached' : 'simulated progress'
+                  }
                 />
               </div>
             )}
@@ -160,6 +171,7 @@ export function AgentDetail() {
             </div>
           )}
 
+          {charter && <AgentCharter definition={charter} />}
           <AgentBrief agent={agent} />
         </div>
 
@@ -173,6 +185,8 @@ export function AgentDetail() {
               <TaskCard key={t.id} world={world} task={t} now={now} compact />
             ))}
           </div>
+
+          {charter && <AgentTypicalWork definition={charter} />}
 
           <div className="card">
             <h4>Activity</h4>

@@ -3,6 +3,7 @@ import { Link, useNavigate, useParams } from 'react-router-dom';
 import { PLOTS, PLOT_KEYS, type PlotKey, type TaskStatus } from '@ai-islands/shared';
 import { api } from '../api/client.js';
 import { HireAgentDialog, NewTaskDialog } from '../components/CreateDialogs.js';
+import { DealPhases, DealRoomBadge } from '../components/DealRoom.js';
 import { TaskCard } from '../components/TaskCard.js';
 import {
   ActivityFeed,
@@ -68,6 +69,7 @@ export function ProjectDetail() {
   }
 
   const agents = agentsForProject(world, project.id, clock);
+  const dealRoom = project.template === 'deal_room';
   const tasks = world.tasks.filter((t) => t.projectId === project.id);
   const done = tasks.filter((t) => t.status === 'completed').length;
   const percent = tasks.length ? Math.round((done / tasks.length) * 100) : 0;
@@ -179,6 +181,7 @@ export function ProjectDetail() {
                   aria-hidden="true"
                 />
                 <h2 style={{ fontSize: 19 }}>{project.name}</h2>
+                {dealRoom && <DealRoomBadge />}
               </div>
               <p className="muted" style={{ marginTop: 4 }}>
                 {project.description || 'No description yet.'}
@@ -190,9 +193,12 @@ export function ProjectDetail() {
             <button className="btn btn-sm btn-primary" onClick={() => setAddingTask(true)}>
               ＋ Task
             </button>
-            <button className="btn btn-sm" onClick={() => setHiring(true)}>
-              ＋ Hire
-            </button>
+            {/* A deal room's team is fixed, so there is nothing to hire. */}
+            {!dealRoom && (
+              <button className="btn btn-sm" onClick={() => setHiring(true)}>
+                ＋ Hire
+              </button>
+            )}
             {!editing && (
               <button
                 className="btn btn-sm"
@@ -273,10 +279,20 @@ export function ProjectDetail() {
               <h4 style={{ margin: 0 }}>
                 The team <span className="count">{agents.length}</span>
               </h4>
-              <button className="btn btn-sm btn-ghost" onClick={() => setHiring(true)}>
-                ＋ Hire
-              </button>
+              {dealRoom ? (
+                <span className="tag">fixed team</span>
+              ) : (
+                <button className="btn btn-sm btn-ghost" onClick={() => setHiring(true)}>
+                  ＋ Hire
+                </button>
+              )}
             </div>
+            {dealRoom && (
+              <p className="muted" style={{ marginTop: 0, fontSize: 12 }}>
+                These five are the whole deal room. Nobody else can be hired onto it, and none of
+                them can be dismissed — so who did what is never in question.
+              </p>
+            )}
             {agents.length === 0 && (
               <p className="muted">Nobody on this island yet. Hire someone to get it moving.</p>
             )}
@@ -303,6 +319,8 @@ export function ProjectDetail() {
               </Link>
             ))}
           </div>
+
+          {dealRoom && <DealPhases />}
 
           <div className="card">
             <h4>

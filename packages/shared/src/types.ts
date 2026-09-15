@@ -1,4 +1,5 @@
 import type { AgentStatus, MovementState, TaskStatus } from './status.js';
+import type { ProjectTemplate } from './deal-room.js';
 
 /** Identifiers are opaque strings everywhere; the database picks the format. */
 export type Id = string;
@@ -33,6 +34,16 @@ export interface Project {
   name: string;
   description: string;
   status: ProjectStatus;
+  /**
+   * What kind of project this is.
+   *
+   * `standard` is an ordinary island: hire and dismiss whoever you like. A
+   * `deal_room` has a fixed team of five named specialists, chosen at creation
+   * and never changed — see `deal-room.ts`. Fixed at creation like the island's
+   * appearance, because a team that could quietly become a different team would
+   * undo the point of having a registry.
+   */
+  template: ProjectTemplate;
   /** Accent colour used on cards and task chips. */
   color: string;
   appearance: IslandAppearance;
@@ -74,6 +85,14 @@ export interface ArchetypeProfile {
   handles: TaskType[];
   /** Where on the island it waits and works by default. */
   home: PlotKey;
+  /**
+   * The exact brief this kind of agent starts with, where one has been written.
+   *
+   * Set for an archetype whose prompt is the operator's own words rather than
+   * something assembled from the fields above — a real engine sends this
+   * verbatim, so it is stored verbatim.
+   */
+  systemPrompt?: string;
 }
 
 export interface AgentMovement {

@@ -3,20 +3,12 @@ import type { AgentArchetype } from '@ai-islands/shared';
 /**
  * Nova, the Researcher — the first agent backed by a real model.
  *
- * The system prompt below is the operator's, verbatim. It is the contract the
- * agent is held to, and two lines of it are load-bearing rather than
- * decorative: "do not claim to have researched something unless you actually
- * did it" is checked after the run by comparing the report's sources against
- * the searches that actually happened, and "stay within the assigned project
- * and task" is enforced by what the executor is allowed to load, not by trust.
+ * The prompt itself lives with the archetype in the shared package, so the
+ * agent that gets hired is told exactly what this runner expects of it: one
+ * copy, read by the seed, by hiring, and by the runner. It is re-exported here
+ * because this is where the code that depends on it lives.
  */
-export const NOVA_SYSTEM_PROMPT = `You are Nova, a research specialist working inside AI Islands.
-Your job is to research assigned topics, organize findings, distinguish facts from assumptions, and produce useful reports.
-You must stay within the assigned project and task.
-Do not claim to have researched something unless you actually did it.
-Do not invent sources or results.
-If you lack information, say so.
-Ask for approval before taking sensitive actions.`;
+export { RESEARCHER_SYSTEM_PROMPT as NOVA_SYSTEM_PROMPT } from '@ai-islands/shared';
 
 /**
  * The tools a researcher may use.

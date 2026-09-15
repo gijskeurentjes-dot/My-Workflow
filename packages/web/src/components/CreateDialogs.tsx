@@ -2,6 +2,8 @@ import { useState } from 'react';
 import {
   ARCHETYPES,
   ARCHETYPE_KEYS,
+  DEAL_AGENT_LIST,
+  DEAL_ROOM_TEMPLATE,
   PLOTS,
   PRIORITY_LABEL,
   TASK_PRIORITIES,
@@ -11,6 +13,7 @@ import {
   type Agent,
   type AgentArchetype,
   type Project,
+  type ProjectTemplate,
   type TaskPriority,
   type TaskType,
 } from '@ai-islands/shared';
@@ -39,8 +42,12 @@ export function NewProjectDialog({
   const [description, setDescription] = useState('');
   const [color, setColor] = useState(PROJECT_COLORS[0]!);
   const [team, setTeam] = useState<AgentArchetype[]>(['pm']);
+  const [template, setTemplate] = useState<ProjectTemplate>('standard');
 
+  const dealRoom = template === 'deal_room';
   const pending = isPending('create-project');
+  // A deal room names itself and brings its own team, so neither is required.
+  const ready = dealRoom || (name.trim().length > 0 && team.length > 0);
 
   const toggle = (archetype: AgentArchetype) => {
     setTeam((current) =>
@@ -51,7 +58,7 @@ export function NewProjectDialog({
   };
 
   const submit = async () => {
-    if (!name.trim() || team.length === 0) return;
+    if (!ready) return;
     let created: Project | null = null;
     const ok = await run(
       'create-project',
@@ -59,11 +66,11 @@ export function NewProjectDialog({
         created = await api.createProject({
           name: name.trim(),
           description: description.trim(),
-          color,
-          team,
+          // A deal room's colour and team come from its template.
+          ...(dealRoom ? { template } : { color, team }),
         });
       },
-      'Project created',
+      dealRoom ? 'Deal room created' : 'Project created',
     );
     if (ok) {
       onClose();
@@ -81,12 +88,8 @@ export function NewProjectDialog({
           <button className="btn btn-ghost" onClick={onClose} data-secondary>
             Cancel
           </button>
-          <button
-            className="btn btn-primary"
-            disabled={!name.trim() || team.length === 0 || pending}
-            onClick={submit}
-          >
-            {pending ? 'Creating…' : 'Create project'}
+          <button className="btn btn-primary" disabled={!ready || pending} onClick={submit}>
+            {pending ? 'Creating…' : dealRoom ? 'Create deal room' : 'Create project'}
           </button>
         </>
       }
@@ -97,13 +100,51 @@ export function NewProjectDialog({
           void submit();
         }}
       >
-        <Field label="Name">
+        <Field
+          label="Kind of project"
+          hint="A deal room comes with a fixed team of five M&A specialists."
+        >
+          <div className="pickrow">
+            <button
+              type="button"
+              role="radio"
+              aria-checked={!dealRoom}
+              className={`pick${!dealRoom ? ' on' : ''}`}
+              onClick={() => setTemplate('standard')}
+            >
+              <span className="pick-ico" aria-hidden="true">
+                🏝️
+              </span>
+              <span>
+                <b>Standard project</b>
+                <span>Pick your own team, hire and dismiss at any time.</span>
+              </span>
+            </button>
+            <button
+              type="button"
+              role="radio"
+              aria-checked={dealRoom}
+              className={`pick${dealRoom ? ' on' : ''}`}
+              onClick={() => setTemplate('deal_room')}
+            >
+              <span className="pick-ico" aria-hidden="true">
+                🤝
+              </span>
+              <span>
+                <b>M&A Deal Room</b>
+                <span>Atlas, Nova, Forge, Ledger and Canvas. Fixed team, nine deal phases.</span>
+              </span>
+            </button>
+          </div>
+        </Field>
+
+        <Field label="Name" hint={dealRoom ? 'Optional — the deal room names itself.' : undefined}>
           <input
             className="input"
             value={name}
             maxLength={120}
             onChange={(e) => setName(e.target.value)}
-            placeholder="e.g. Q1 Website refresh"
+            placeholder={dealRoom ? DEAL_ROOM_TEMPLATE.defaultName : 'e.g. Q1 Website refresh'}
           />
         </Field>
 
@@ -118,6 +159,26 @@ export function NewProjectDialog({
           />
         </Field>
 
+        {dealRoom ? (
+          <Field
+            label="The deal room team"
+            hint="Fixed. Nobody else can be hired onto a deal room, and none of these can be dismissed."
+          >
+            <div className="pickrow">
+              {DEAL_AGENT_LIST.map((definition) => (
+                <div key={definition.id} className="pick on" aria-disabled="true">
+                  <Avatar archetype={definition.archetype} size={28} />
+                  <span>
+                    <b>{definition.name}</b>
+                    <span>
+                      {definition.role} · works from the {PLOTS[definition.home].label}
+                    </span>
+                  </span>
+                </div>
+              ))}
+            </div>
+          </Field>
+        ) : (
         <Field
           label="Starting team"
           hint="You can hire and dismiss agents at any time afterwards."
@@ -147,7 +208,9 @@ export function NewProjectDialog({
             })}
           </div>
         </Field>
+        )}
 
+        {!dealRoom && (
         <Field label="Colour">
           <div className="swatches" role="radiogroup" aria-label="Project colour">
             {PROJECT_COLORS.map((c) => (
@@ -164,6 +227,7 @@ export function NewProjectDialog({
             ))}
           </div>
         </Field>
+        )}
 
         {/* Enter submits, without a visible duplicate of the footer button. */}
         <button type="submit" className="sr-only" tabIndex={-1} aria-hidden="true" />

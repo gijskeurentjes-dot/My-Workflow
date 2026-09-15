@@ -1480,3 +1480,84 @@ textarea.input {
     animation: none;
   }
 }
+
+/* ── Deal room ─────────────────────────────────────────────────────────────
+   An agent's permissions, its hard limits and the phases a deal moves
+   through. Lists, because that is what they are — the design job is making
+   them quick to scan, not decorating them. */
+
+.rules + .rules {
+  margin-top: 12px;
+}
+
+.rule-list {
+  margin: 4px 0 0;
+  padding-left: 18px;
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: var(--ink-2);
+}
+
+.rule-list li + li {
+  margin-top: 3px;
+}
+
+.tone-text-ok {
+  color: var(--ok);
+}
+.tone-text-bad {
+  color: var(--bad);
+}
+.tone-text-warn {
+  color: var(--warn);
+}
+.tone-text-info {
+  color: var(--info);
+}
+
+.phase-list {
+  list-style: none;
+  margin: 0 0 10px;
+  padding: 0;
+  counter-reset: phase;
+}
+
+.phase-list li {
+  display: flex;
+  gap: 9px;
+  align-items: flex-start;
+  padding: 6px 0;
+  border-top: 1px solid var(--line);
+  font-size: 12.5px;
+}
+
+.phase-list li:first-child {
+  border-top: 0;
+}
+
+.phase-n {
+  flex: 0 0 auto;
+  width: 19px;
+  height: 19px;
+  border-radius: 999px;
+  display: grid;
+  place-items: center;
+  background: var(--sunken);
+  border: 1px solid var(--line);
+  font-size: 10.5px;
+  font-weight: 800;
+  color: var(--ink-3);
+}
+
+.pick-ico {
+  flex: 0 0 auto;
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  font-size: 18px;
+}
+
+.pick[aria-disabled='true'] {
+  cursor: default;
+}
